@@ -118,11 +118,15 @@ public:
 	consensus.vUpgrades[Consensus::UPGRADE_ACADIA].nProtocolVersion = 170007;
         consensus.vUpgrades[Consensus::UPGRADE_ACADIA].nActivationHeight = 250000;		// Approx January 12th
 
+	consensus.vUpgrades[Consensus::UPGRADE_ZELHASH].nProtocolVersion = 170007;
+        consensus.vUpgrades[Consensus::UPGRADE_ZELHASH].nActivationHeight = Consensus::NetworkUpgrade::NO_ACTIVATION_HEIGHT;		// 370 000 / June 29th or 360 000 / June 15 th
+
 	consensus.nZawyLWMAAveragingWindow = 60;
 	consensus.eh_epoch_fade_length = 11;
 
 	eh_epoch_1 = eh200_9;
         eh_epoch_2 = eh144_5;
+        eh_epoch_3 = zelHash;
 
 
         /**
@@ -231,27 +235,32 @@ public:
 
         consensus.vUpgrades[Consensus::BASE].nProtocolVersion = 170002;
         consensus.vUpgrades[Consensus::BASE].nActivationHeight =
-            Consensus::NetworkUpgrade::ALWAYS_ACTIVE;
+        Consensus::NetworkUpgrade::ALWAYS_ACTIVE;
 
         consensus.vUpgrades[Consensus::UPGRADE_TESTDUMMY].nProtocolVersion = 170002;
         consensus.vUpgrades[Consensus::UPGRADE_TESTDUMMY].nActivationHeight =
-            Consensus::NetworkUpgrade::NO_ACTIVATION_HEIGHT;
+        Consensus::NetworkUpgrade::NO_ACTIVATION_HEIGHT;
 
         consensus.vUpgrades[Consensus::UPGRADE_LWMA].nProtocolVersion = 170002;
-	    consensus.vUpgrades[Consensus::UPGRADE_LWMA].nActivationHeight = 100;
+	consensus.vUpgrades[Consensus::UPGRADE_LWMA].nActivationHeight = 70;
 
-	    consensus.vUpgrades[Consensus::UPGRADE_EQUI144_5].nProtocolVersion = 170002;
-	    consensus.vUpgrades[Consensus::UPGRADE_EQUI144_5].nActivationHeight = 200;
+	consensus.vUpgrades[Consensus::UPGRADE_EQUI144_5].nProtocolVersion = 170002;
+	consensus.vUpgrades[Consensus::UPGRADE_EQUI144_5].nActivationHeight = 70;
 
         consensus.vUpgrades[Consensus::UPGRADE_ACADIA].nProtocolVersion = 170007;
-        consensus.vUpgrades[Consensus::UPGRADE_ACADIA].nActivationHeight = 300;
+        consensus.vUpgrades[Consensus::UPGRADE_ACADIA].nActivationHeight = 80;
+
+	consensus.vUpgrades[Consensus::UPGRADE_ZELHASH].nProtocolVersion = 170007;
+        consensus.vUpgrades[Consensus::UPGRADE_ZELHASH].nActivationHeight = 90;
 
         consensus.nZawyLWMAAveragingWindow = 60;
-	    consensus.eh_epoch_fade_length = 10;
+	consensus.eh_epoch_fade_length = 10;
 
-	    //eh_epoch_1 = eh96_5;
-	    eh_epoch_1 = eh200_9;
-        eh_epoch_2 = eh144_5;
+	eh_epoch_1 = eh48_5;
+        eh_epoch_2 = eh96_5;
+	//eh_epoch_1 = eh200_9;
+        //eh_epoch_2 = eh144_5;
+        eh_epoch_3 = zelHash;
 
         pchMessageStart[0] = 0xfa;
         pchMessageStart[1] = 0x1a;
@@ -301,7 +310,7 @@ public:
 
         vFixedSeeds = std::vector<SeedSpec6>(pnSeed6_test, pnSeed6_test + ARRAYLEN(pnSeed6_test));
 
-        fMiningRequiresPeers = true;
+        fMiningRequiresPeers = false;
         fDefaultConsistencyChecks = false;
         fRequireStandard = true;
         fMineBlocksOnDemand = false;
@@ -521,6 +530,20 @@ int validEHparameterList(EHparameters *ehparams, unsigned long blockheight, cons
     //if in overlap period, there will be two valid solutions, else 1.
     //The upcoming version of EH is preferred so will always be first element
     //returns number of elements in list
+
+    if(blockheight>=(params.GetConsensus().vUpgrades[Consensus::UPGRADE_ZELHASH].nActivationHeight + params.GetConsensus().eh_epoch_fade_length)){
+        ehparams[0]=params.eh_epoch_3_params();
+        return 1;
+    }
+
+    if (  (blockheight  < (params.GetConsensus().vUpgrades[Consensus::UPGRADE_ZELHASH].nActivationHeight + params.GetConsensus().eh_epoch_fade_length))
+       && (blockheight >= (params.GetConsensus().vUpgrades[Consensus::UPGRADE_ZELHASH].nActivationHeight)) ) {
+        ehparams[0]=params.eh_epoch_3_params();
+	ehparams[1]=params.eh_epoch_2_params();
+        return 1;
+    }	
+
+
     if(blockheight>=(params.GetConsensus().vUpgrades[Consensus::UPGRADE_EQUI144_5].nActivationHeight + params.GetConsensus().eh_epoch_fade_length)){
         ehparams[0]=params.eh_epoch_2_params();
         return 1;

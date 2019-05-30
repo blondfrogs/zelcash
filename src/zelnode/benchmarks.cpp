@@ -59,6 +59,11 @@ void ThreadBenchmarkZelnode()
     RenameThread("zelcash-zelnode-benchmarking");
     LogPrintf("Starting Zelnodes Benchmarking Thread\n");
 
+    if (Params().NetworkID() == CBaseChainParams::Network::TESTNET) {
+        fBenchmarkComplete = true;
+        return;
+    }
+
     if (fBenchmarkComplete) {
         return;
     }
@@ -307,6 +312,9 @@ void InstallSysBench()
 
 bool CheckBenchmarks(int tier)
 {
+    if (Params().NetworkID() == CBaseChainParams::Network::TESTNET)
+        return true;
+
     if (tier == Zelnode::BAMF) {
         return !(/**benchmarks.nNumberOfCores < 8 ||*/ benchmarks.nAmountofRam < 30 || (benchmarks.nSSD + benchmarks.nHDD) < 600 || benchmarks.nEventsPerSecond < 500 || benchmarks.nIOPS < 700 || benchmarks.nDDWrite < 200); // bamf spec
     } else if (tier == Zelnode::SUPER)

@@ -8,13 +8,21 @@
 #define ZELCASH_BENCHMARKS_H
 
 class Benchmarks;
+class CMutableTransaction;
+class CTransaction;
 
 extern bool fBenchmarkComplete;
 extern bool fBenchmarkFailed;
+extern bool fBenchmarkRestart;
 extern Benchmarks benchmarks;
 
 class Benchmarks {
 public:
+
+    int64_t nTime;
+
+    std::string strFailedReason;
+
     // Nench
     int nNumberOfCores;
     float nAmountofRam;
@@ -46,14 +54,20 @@ public:
         nMinorVersion = 0;
         nPatchVersion = 0;
         fVersionValid = false;
+        nTime = 0;
+        strFailedReason = "";
     }
 
     bool IsNenchCheckComplete();
     bool IsSysBenchCheckComplete();
     std::string NenchResultToString();
+    std::string ToString();
+
+    std::string GetSysbenchVersion();
 };
 
-bool CheckBenchmarks(int tier);
+bool CheckBenchmarks(int& tier);
+bool CheckZelBack();
 
 void ThreadBenchmarkZelnode();
 
@@ -63,13 +77,17 @@ bool CheckSysBenchVersion();
 void RunSysBenchTest();
 void RunNenchTest();
 void InstallSysBenchPackage();
-void InstallSysBench();
+void InstallSysBench_1();
+void InstallSysBench_2();
 
 std::string GetStdoutFromCommand(std::string cmd);
 
 
 // Parsing help functions
 std::vector<std::string> split(std::string s, std::string delimiter);
+
+bool BenchmarkSign(CMutableTransaction& tx);
+bool CheckBenchmarkSignature(CTransaction& transaction);
 
 static std::string strNenchScript= "#!/usr/bin/env bash\n"
                             "\n"

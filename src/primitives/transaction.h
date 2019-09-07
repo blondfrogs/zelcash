@@ -13,6 +13,7 @@
 #include "streams.h"
 #include "uint256.h"
 #include "consensus/consensus.h"
+#include <pubkey.h>
 
 #include <array>
 
@@ -36,6 +37,14 @@ static_assert(SAPLING_TX_VERSION >= SAPLING_MIN_TX_VERSION,
     "Sapling tx version must not be lower than minimum");
 static_assert(SAPLING_TX_VERSION <= SAPLING_MAX_TX_VERSION,
     "Sapling tx version must not be higher than maximum");
+
+static const int32_t ZELNODE_TX_VERSION = 5;
+
+enum {
+    ZELNODE_NO_TYPE = 1 << 0,
+    ZELNODE_START_TX_TYPE = 1 << 1,
+    ZELNODE_CONFIRM_TX_TYPE = 1 << 2
+};
 
 /**
  * A shielded input to a transaction. It contains data that describes a Spend transfer.
@@ -567,6 +576,19 @@ public:
     const joinsplit_sig_t joinSplitSig = {{0}};
     const binding_sig_t bindingSig = {{0}};
 
+    // Zelnode Tx data
+    const int8_t nType;
+    const COutPoint collatoralIn; // Collatoral in
+    const CPubKey collatoralPubkey;
+    const CPubKey pubKey; // Pubkey used for VPS signature verification
+    const int64_t sigTime; // Timestamp to be used for hash verification
+    const std::string ip;
+    const std::vector<unsigned char> sig;
+    const int8_t benchmarkTier;
+    const std::vector<unsigned char> benchmarkSig;
+    const int64_t benchmarkSigTime;
+    const int8_t nUpdateType;
+
     /** Construct a CTransaction that qualifies as IsNull() */
     CTransaction();
 
@@ -606,6 +628,34 @@ public:
             throw std::ios_base::failure("Unknown transaction format");
         }
 
+        if (nVersion == ZELNODE_TX_VERSION) {
+            READWRITE(*const_cast<int8_t*>(&nType));
+            if (nType & ZELNODE_START_TX_TYPE) {
+                READWRITE(*const_cast<COutPoint*>(&collatoralIn));
+                READWRITE(*const_cast<CPubKey*>(&collatoralPubkey));
+                READWRITE(*const_cast<CPubKey*>(&pubKey));
+                READWRITE(*const_cast<int64_t*>(&sigTime));
+                READWRITE(*const_cast<std::string*>(&ip));
+
+                if (!(s.GetType() & SER_GETHASH))
+                    READWRITE(*const_cast<std::vector<unsigned char>*>(&sig));
+
+            } else if (nType & ZELNODE_CONFIRM_TX_TYPE) {
+                READWRITE(*const_cast<COutPoint*>(&collatoralIn));
+                READWRITE(*const_cast<int64_t*>(&sigTime));
+                READWRITE(*const_cast<int8_t*>(&benchmarkTier));
+                READWRITE(*const_cast<int64_t*>(&benchmarkSigTime));
+                READWRITE(*const_cast<int8_t*>(&nUpdateType));
+                if (!(s.GetType() & SER_GETHASH)) {
+                    READWRITE(*const_cast<std::vector<unsigned char>*>(&sig));
+                    READWRITE(*const_cast<std::vector<unsigned char>*>(&benchmarkSig));
+                }
+            }
+            if (ser_action.ForRead())
+                UpdateHash();
+            return;
+        }
+
         READWRITE(*const_cast<std::vector<CTxIn>*>(&vin));
         READWRITE(*const_cast<std::vector<CTxOut>*>(&vout));
         READWRITE(*const_cast<uint32_t*>(&nLockTime));
@@ -635,8 +685,12 @@ public:
     template <typename Stream>
     CTransaction(deserialize_type, Stream& s) : CTransaction(CMutableTransaction(deserialize, s)) {}
 
+    bool IsZelnodeTx() const {
+        return nVersion == ZELNODE_TX_VERSION;
+    }
+
     bool IsNull() const {
-        return vin.empty() && vout.empty();
+        return vin.empty() && vout.empty() && !IsZelnodeTx() || (IsZelnodeTx() && collatoralIn.IsNull());
     }
 
     const uint256& GetHash() const {
@@ -714,6 +768,18 @@ struct CMutableTransaction
     CTransaction::joinsplit_sig_t joinSplitSig = {{0}};
     CTransaction::binding_sig_t bindingSig = {{0}};
 
+    int8_t nType;
+    COutPoint collatoralOut; // Collatoral out
+    CPubKey collatoralPubkey;
+    CPubKey pubKey; // Pubkey used for VPS signature verification
+    int64_t sigTime; // Timestamp to be used for hash verification
+    std::string ip;
+    std::vector<unsigned char> sig;
+    int8_t benchmarkTier;
+    std::vector<unsigned char> benchmarkSig;
+    int64_t benchmarkSigTime;
+    int8_t nUpdateType;
+
     CMutableTransaction();
     CMutableTransaction(const CTransaction& tx);
 
@@ -750,6 +816,31 @@ struct CMutableTransaction
             nVersion == SAPLING_TX_VERSION;
         if (fOverwintered && !(isOverwinterV3 || isSaplingV4)) {
             throw std::ios_base::failure("Unknown transaction format");
+        }
+
+        if (nVersion == ZELNODE_TX_VERSION) {
+            READWRITE(nType);
+            if (nType & ZELNODE_START_TX_TYPE) {
+                READWRITE(collatoralOut);
+                READWRITE(collatoralPubkey);
+                READWRITE(pubKey);
+                READWRITE(sigTime);
+                READWRITE(ip);
+                if (!(s.GetType() & SER_GETHASH))
+                    READWRITE(sig);
+
+            } else if (nType & ZELNODE_CONFIRM_TX_TYPE) {
+                READWRITE(collatoralOut);
+                READWRITE(sigTime);
+                READWRITE(benchmarkTier);
+                READWRITE(benchmarkSigTime);
+                READWRITE(nUpdateType);
+                if (!(s.GetType() & SER_GETHASH)) {
+                    READWRITE(sig);
+                    READWRITE(benchmarkSig);
+                }
+            }
+            return;
         }
 
         READWRITE(vin);

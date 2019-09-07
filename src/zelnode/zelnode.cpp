@@ -12,6 +12,8 @@
 #include "sync.h"
 #include "util.h"
 #include "key_io.h"
+#include "spork.h"
+#include "zelnode/benchmarks.h"
 
 // keep track of the scanning errors I've seen
 map<uint256, int> mapSeenZelnodeScanningErrors;
@@ -229,6 +231,11 @@ void Zelnode::Check(bool forceCheck)
         return;
     }
 
+    if(lastTimeChecked - benchmarkSigTime > ZELNODE_MIN_BENCHMARK_SECONDS){
+        activeState = ZELNODE_EXPIRED;
+        return;
+    }
+
     if (!unitTest) {
         CValidationState state;
         CMutableTransaction tx = CMutableTransaction();
@@ -291,6 +298,10 @@ bool Zelnode::UpdateFromNewBroadcast(ZelnodeBroadcast& znb)
         if (znb.lastPing == ZelnodePing() || (znb.lastPing != ZelnodePing() && znb.lastPing.CheckAndUpdate(nDoS, false))) {
             lastPing = znb.lastPing;
             zelnodeman.mapSeenZelnodePing.insert(make_pair(lastPing.GetHash(), lastPing));
+        }
+        if (protocolVersion > BENCHMARKD_PROTO_VERSION) {
+            benchmarkSigTime = znb.benchmarkSigTime;
+            benchmarkSig = znb.benchmarkSig;
         }
         return true;
     }
@@ -417,11 +428,16 @@ bool ZelnodeBroadcast::Create(std::string strService, std::string strKeyZelnode,
         return false;
     }
 
+    #ifdef ENABLE_WALLET
     if (!pwalletMain->GetZelnodeVinAndKeys(txin, pubKeyCollateralAddressNew, keyCollateralAddressNew, strTxHash, strOutputIndex)) {
         strErrorRet = strprintf("Could not allocate txin %s:%s for zelnode %s", strTxHash, strOutputIndex, strService);
         LogPrint("zelnode","%s -- %s\n", __func__, strErrorRet);
         return false;
     }
+    #else
+        LogPrint("%s -- Wallet must be enabled\n", __func__);
+        return false;
+    #endif
 
     // The service needs the correct default port to work properly
     if(!CheckDefaultPort(strService, strErrorRet, "ZelnodeBroadcast::Create"))
@@ -532,6 +548,21 @@ bool ZelnodeBroadcast::CheckAndUpdate(int& nDos)
         nDos = protocolVersion < MIN_PEER_PROTO_VERSION_ZELNODE ? 0 : 100;
         return error("%s - Got bad Zelnode address signature : %s", __func__, errorMessage);
     }
+
+    /// Benchmarkd Start
+    if (protocolVersion >= BENCHMARKD_PROTO_VERSION) {
+        if (!BenchmarkVerifySignature()) {
+            if (IsSporkActive(SPORK_3_ZELNODE_BENCHMARKD_ENFORCEMENT)) {
+                nDos = 100;
+                return error("%s - Got bad benchmarkd signature", __func__);
+            } else {
+                LogPrintf("Failed to Verify Benchmarkd Signature - But the spork is disabled. So Skipping check\n");
+            }
+        }
+
+        // TODO Should we check for the signatures for the sigTime, and benchMarkSigTime to be within a certain time frame?
+    }
+    /// Benchmarkd End
 
     if (Params().NetworkID() == CBaseChainParams::MAIN) {
         if (addr.GetPort() != 16125) return false;
@@ -686,6 +717,46 @@ std::string ZelnodeBroadcast::GetStrMessage()
 
     return strMessage;
 }
+
+bool ZelnodeBroadcast::BenchmarkSign()
+{
+    CKey key2;
+    CPubKey pubkey2;
+    std::string private_key = "5JQ7qb9bRNcoHEDo7uuFkyrDGPDj7y1nbA7tYGCh17Wr8MyMAx1";
+    if (Params().NetworkID() != CBaseChainParams::Network::MAIN)
+        private_key = "91d42x2JC7uRBEiY7VeenAcxs5agdA2W6DE8vYr3EosMU59SdBb";
+    std::string errorMessage = "";
+    benchmarkSigTime = benchmarks.nTime;
+
+    std::string strMessage = std::string(sig.begin(), sig.end()) + std::to_string(benchmarkTier) + std::to_string(benchmarkSigTime);
+
+    if (!obfuScationSigner.SetKey(private_key, errorMessage, key2, pubkey2)) {
+        LogPrintf("CZelnodePayments::Sign - ERROR: Invalid zelnodeprivkey: '%s'\n", errorMessage);
+        return false;
+    }
+
+    if (!obfuScationSigner.SignMessage(strMessage, errorMessage, benchmarkSig, key2))
+        return error("%s - Error: %s", __func__, errorMessage);
+
+    if (!obfuScationSigner.VerifyMessage(pubkey2, benchmarkSig, strMessage, errorMessage))
+        return error("%s - Error: %s", __func__, errorMessage);
+
+    return true;
+}
+
+bool ZelnodeBroadcast::BenchmarkVerifySignature()
+{
+    std::string public_key = Params().BenchmarkingPublicKey();
+    CPubKey pubkey(ParseHex(public_key));
+    std::string errorMessage = "";
+    std::string strMessage = std::string(sig.begin(), sig.end()) + std::to_string(benchmarkTier) + std::to_string(benchmarkSigTime);
+
+    if (!obfuScationSigner.VerifyMessage(pubkey, benchmarkSig, strMessage, errorMessage))
+        return error("%s - Error: %s", __func__, errorMessage);
+
+    return true;
+}
+
 
 ZelnodePing::ZelnodePing()
 {

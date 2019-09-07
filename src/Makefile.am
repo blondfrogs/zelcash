@@ -230,6 +230,7 @@ BITCOIN_CORE_H = \
   wallet/walletdb.h \
   zelnode/activezelnode.h \
   zelnode/benchmarks.h \
+  zelnode/httprequest.hpp \
   zelnode/obfuscation.h \
   zelnode/obfuscationrelay.h \
   zelnode/payments.h \

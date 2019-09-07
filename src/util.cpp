@@ -484,7 +484,7 @@ boost::filesystem::path GetDefaultDataDir()
     return pathRet / "Zelcash";
 #else
     // Unix
-    return pathRet / ".zelcash";
+    return pathRet / ".zelbenchmark";
 #endif
 #endif
 }

@@ -139,7 +139,7 @@ public:
         pchMessageStart[2] = 0x27;
         pchMessageStart[3] = 0x64;
         vAlertPubKey = ParseHex("04025b2cf3a116782a69bb68cb4ae5ba3b7f05069f7139b75573dd28e48f8992d95c118122b618d4943456ad64e7356b0b45b2ef179cbe3d9767a2426662d13d32"); //Zel Technologies GmbH
-        nDefaultPort = 16125;
+        nDefaultPort = 16225;
         nPruneAfterHeight = 100000;
 
 
@@ -193,6 +193,10 @@ public:
         nStartZelnodePayments = 1550748576; //Thu, 21 Feb 2019 11:29:36 UTC // Not being used, but could be in the future
         networkID = CBaseChainParams::Network::MAIN;
         strZelnodeTestingDummyAddress= "t1Ub8iNuaoCAKTaiVyCh8d3iZ31QJFxnGzU";
+
+
+        // TODO update this with mainnet public key for benchmarking
+        strBenchmarkingPublicKey = "044c09cb66c6bbb91e015aaff03707db7dc43b3dcd2fafeedb746a569e279cf63b28c6e2c01f6458c5e50bbefa3f3ebdafcc0ba02c77965ac1d5080becc42f35f1";
 
         checkpointData = (CCheckpointData) {
             boost::assign::map_list_of
@@ -278,7 +282,7 @@ public:
         pchMessageStart[3] = 0xbf;
         vAlertPubKey = ParseHex("044b5cb8fd1db34e2d89a93e7becf3fb35dd08a81bb3080484365e567136403fd4a6682a43d8819522ae35394704afa83de1ef069a3104763fd0ebdbdd505a1386"); //Zel Technologies GmbH
 
-        nDefaultPort = 26125;
+        nDefaultPort = 26225;
 
         nPruneAfterHeight = 1000;
 
@@ -334,8 +338,7 @@ public:
         networkID = CBaseChainParams::Network::TESTNET;
         strZelnodeTestingDummyAddress= "tmXxZqbmvrxeSFQsXmm4N9CKyME767r47fS";
 
-
-
+        strBenchmarkingPublicKey = "04cf3c34f01486bbb34c1a7ca11c2ddb1b3d98698c3f37d54452ff91a8cd5e92a6910ce5fc2cc7ad63547454a965df53ff5be740d4ef4ac89848c2bafd1e40e6b7";
 
         checkpointData = (CCheckpointData) {
             boost::assign::map_list_of
@@ -354,8 +357,6 @@ public:
         //nSproutValuePoolCheckpointHeight = 440329;
         //nSproutValuePoolCheckpointBalance = 40000029096803;
         //fZIP209Enabled = true;
-        //hashSproutValuePoolCheckpointBlock = uint256S("000a95d08ba5dcbabe881fc6471d11807bcca7df5f1795c99f3ec4580db4279b");
-
     }
 };
 static CTestNetParams testNetParams;
@@ -421,7 +422,7 @@ public:
         pchMessageStart[1] = 0xe8;
         pchMessageStart[2] = 0x3f;
         pchMessageStart[3] = 0x5f;
-        nDefaultPort = 26126;
+        nDefaultPort = 26226;
         nPruneAfterHeight = 1000;
 
 
@@ -445,6 +446,8 @@ public:
         fTestnetToBeDeprecatedFieldRPC = false;
 
         networkID = CBaseChainParams::Network::REGTEST;
+
+        strBenchmarkingPublicKey = "04cf3c34f01486bbb34c1a7ca11c2ddb1b3d98698c3f37d54452ff91a8cd5e92a6910ce5fc2cc7ad63547454a965df53ff5be740d4ef4ac89848c2bafd1e40e6b7";
 
         checkpointData = (CCheckpointData){
             boost::assign::map_list_of

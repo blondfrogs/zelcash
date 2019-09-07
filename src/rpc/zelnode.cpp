@@ -22,6 +22,8 @@
 
 #include <boost/tokenizer.hpp>
 #include <fstream>
+#include <core_io.h>
+#include <boost/assign/list_of.hpp>
 
 bool DecodeHexZelnodeBroadcast(ZelnodeBroadcast& zelnodeBroadcast, std::string strHexZelnodeBroadcast) {
 
@@ -162,7 +164,9 @@ UniValue startzelnode(const UniValue& params, bool fHelp)
 
     bool fLock = (params[1].get_str() == "true" ? true : false);
 
+    #ifdef ENABLE_WALLET
     EnsureWalletIsUnlocked();
+    #endif
 
     if (strCommand == "local") {
         if (!fZelnode) throw runtime_error("you must set zelnode=1 in the configuration\n");
@@ -170,8 +174,10 @@ UniValue startzelnode(const UniValue& params, bool fHelp)
         if (activeZelnode.status != ACTIVE_ZELNODE_STARTED) {
             activeZelnode.status = ACTIVE_ZELNODE_INITIAL; // TODO: consider better way
             activeZelnode.ManageStatus();
+            #ifdef ENABLE_WALLET
             if (fLock)
                 pwalletMain->Lock();
+            #endif
         }
 
         return activeZelnode.GetStatus();
@@ -225,8 +231,10 @@ UniValue startzelnode(const UniValue& params, bool fHelp)
             resultsObj.push_back(statusObj);
         }
 
+        #ifdef ENABLE_WALLET
         if (fLock)
             pwalletMain->Lock();
+        #endif
 
         UniValue returnObj(UniValue::VOBJ);
         returnObj.push_back(Pair("overall", strprintf("Successfully started %d zelnodes, failed to start %d, total %d", successful, failed, successful + failed)));
@@ -276,8 +284,10 @@ UniValue startzelnode(const UniValue& params, bool fHelp)
 
         resultsObj.push_back(statusObj);
 
+        #ifdef ENABLE_WALLET
         if (fLock)
             pwalletMain->Lock();
+        #endif
 
         UniValue returnObj(UniValue::VOBJ);
         returnObj.push_back(Pair("overall", strprintf("Successfully started %d zelnodes, failed to start %d, total %d", successful, failed, successful + failed)));
@@ -998,6 +1008,7 @@ UniValue listzelnodeconf (const UniValue& params, bool fHelp)
     return ret;
 }
 
+#ifdef ENABLE_WALLET
 UniValue createzelnodebroadcast(const UniValue& params, bool fHelp)
 {
     string strCommand;
@@ -1131,144 +1142,212 @@ UniValue createzelnodebroadcast(const UniValue& params, bool fHelp)
     }
     return NullUniValue;
 }
+#endif
 
-
-UniValue decodezelnodebroadcast(const UniValue& params, bool fHelp)
+UniValue getbenchmarks(const UniValue& params, bool fHelp)
 {
-    if (fHelp || params.size() != 1)
+    if (fHelp || params.size() != 0)
         throw runtime_error(
-                "decodezelnodebroadcast \"hexstring\"\n"
-                "\nCommand to decode zelnode broadcast messages\n"
-
-                "\nArgument:\n"
-                "1. \"hexstring\"        (string) The hex encoded zelnode broadcast message\n"
+                "getbenchmarks\n"
+                "\nShow current benchmarking results\n"
 
                 "\nResult:\n"
                 "{\n"
-                "  \"vin\": \"xxxx\"                (string) The unspent output which is holding the zelnode collateral\n"
-                "  \"addr\": \"xxxx\"               (string) IP address of the zelnode\n"
-                "  \"pubkeycollateral\": \"xxxx\"   (string) Collateral address's public key\n"
-                "  \"pubkeyzelnode\": \"xxxx\"   (string) Zelnode's public key\n"
-                "  \"vchsig\": \"xxxx\"             (string) Base64-encoded signature of this message (verifiable via pubkeycollateral)\n"
-                "  \"sigtime\": \"nnn\"             (numeric) Signature timestamp\n"
-                "  \"protocolversion\": \"nnn\"     (numeric) Zelnodes's protocol version\n"
-                "  \"lastping\" : {                 (object) JSON object with information about the zelnode's last ping\n"
-                "      \"vin\": \"xxxx\"            (string) The unspent output of the zelnode which is signing the message\n"
-                "      \"blockhash\": \"xxxx\"      (string) Current chaintip blockhash minus 12\n"
-                "      \"sigtime\": \"nnn\"         (numeric) Signature time for this ping\n"
-                "      \"vchsig\": \"xxxx\"         (string) Base64-encoded signature of this ping (verifiable via pubkeyzelnode)\n"
+                "  \"status\": \"xxxx\"      (string) Status of the benchmarking process\n"
+                "  \"time\": \"nnn\"         (numeric) UTC time when benchmarking completed\n"
+                "  \"cores\": \"nnn\"        (numeric) Collateral address's public key\n"
+                "  \"ram\": \"nnn\"          (numeric)  Amount of ram found\n"
+                "  \"ssd\": \"nnn\"          (numeric)  Solid State Drive space in gigbytes\n"
+                "  \"hdd\": \"nnn\"          (numeric) Hard Drive space in gigbytes\n"
+                "  \"iops\": \"nnn\"         (numeric) Input/Output Operations Per Second\n"
+                "  \"ddwrite\": \"nnn\"      (numeric) dd write speed\n"
+                "  \"eps\": \"nnn\"          (numeric) Events per second\n"
+                "  \"sysbench\": \"nnn\"     (numeric) Sysbench version\n"
                 "}\n"
 
                 "\nExamples:\n" +
-                HelpExampleCli("decodezelnodebroadcast", "hexstring") + HelpExampleRpc("decodezelnodebroadcast", "hexstring"));
+                HelpExampleCli("getbenchmarks", "") + HelpExampleRpc("getbenchmarks", ""));
 
-    ZelnodeBroadcast zelnodeBroadcast;
+    UniValue response(UniValue::VOBJ);
 
-    if (!DecodeHexZelnodeBroadcast(zelnodeBroadcast, params[0].get_str()))
-        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "Zelnode broadcast message decode failed");
+    int tier;
+    std::string benchmarkStatus = "";
+    if (CheckBenchmarks(tier)) {
+        benchmarkStatus = TierToString(tier);
+    } else if (fBenchmarkRestart) {
+        benchmarkStatus = "restarting";
+    } else if (fBenchmarkFailed) {
+        benchmarkStatus = "failed";
+    } else if (!fBenchmarkComplete) {
+        benchmarkStatus = "running";
+    } else {
+        benchmarkStatus = "toaster";
+    }
 
-    if(!zelnodeBroadcast.VerifySignature())
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Zelnode broadcast signature verification failed");
+    response.push_back(Pair("status", benchmarkStatus));
+    response.push_back(Pair("time", benchmarks.nTime));
+    response.push_back(Pair("cores", benchmarks.nNumberOfCores));
+    response.push_back(Pair("ram", benchmarks.nAmountofRam));
+    response.push_back(Pair("ssd", benchmarks.nSSD));
+    response.push_back(Pair("hdd", benchmarks.nHDD));
+    response.push_back(Pair("iops", benchmarks.nIOPS));
+    response.push_back(Pair("ddwrite", benchmarks.nDDWrite));
+    response.push_back(Pair("eps", benchmarks.nEventsPerSecond));
+    response.push_back(Pair("sysbench version", benchmarks.GetSysbenchVersion()));
 
-    UniValue resultObj(UniValue::VOBJ);
-
-    resultObj.push_back(Pair("vin", zelnodeBroadcast.vin.prevout.ToString()));
-    resultObj.push_back(Pair("addr", zelnodeBroadcast.addr.ToString()));
-    resultObj.push_back(Pair("pubkeycollateral", EncodeDestination(zelnodeBroadcast.pubKeyCollateralAddress.GetID())));
-    resultObj.push_back(Pair("pubkeyzelnode", EncodeDestination(zelnodeBroadcast.pubKeyZelnode.GetID())));
-    resultObj.push_back(Pair("vchsig", EncodeBase64(&zelnodeBroadcast.sig[0], zelnodeBroadcast.sig.size())));
-    resultObj.push_back(Pair("sigtime", zelnodeBroadcast.sigTime));
-    resultObj.push_back(Pair("protocolversion", zelnodeBroadcast.protocolVersion));
-    resultObj.push_back(Pair("nlastdsq", zelnodeBroadcast.nLastDsq));
-
-    UniValue lastPingObj(UniValue::VOBJ);
-    lastPingObj.push_back(Pair("vin", zelnodeBroadcast.lastPing.vin.prevout.ToString()));
-    lastPingObj.push_back(Pair("blockhash", zelnodeBroadcast.lastPing.blockHash.ToString()));
-    lastPingObj.push_back(Pair("sigtime", zelnodeBroadcast.lastPing.sigTime));
-    lastPingObj.push_back(Pair("vchsig", EncodeBase64(&zelnodeBroadcast.lastPing.vchSig[0], zelnodeBroadcast.lastPing.vchSig.size())));
-
-    resultObj.push_back(Pair("lastping", lastPingObj));
-
-    return resultObj;
+    return response;
 }
 
-UniValue relayzelnodebroadcast(const UniValue& params, bool fHelp)
+UniValue restartnodebenchmarks(const UniValue& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+                "restartnodebenchmarks\n"
+                "\nRestart node benchmarks\n"
+
+                "\nExamples:\n" +
+                HelpExampleCli("restartnodebenchmarks", "") + HelpExampleRpc("restartnodebenchmarks", ""));
+
+    fBenchmarkRestart = true;
+
+    return "Benchmarks will restart in the next couple minutes";
+}
+
+UniValue signzelnodetransaction(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() != 1)
         throw runtime_error(
-                "relayzelnodebroadcast \"hexstring\"\n"
-                "\nCommand to relay zelnode broadcast messages\n"
+                "signzelnodetransaction \"hexstring\"\n"
+                "\nCommand to get benchmarkd to sign a zelnode broadcast\n"
 
                 "\nArguments:\n"
                 "1. \"hexstring\"        (string) The hex encoded zelnode broadcast message\n"
 
                 "\nExamples:\n" +
-                HelpExampleCli("relayzelnodebroadcast", "hexstring") + HelpExampleRpc("relayzelnodebroadcast", "hexstring"));
+                HelpExampleCli("signzelnodebroadcast", "hexstring") + HelpExampleRpc("signzelnodebroadcast", "hexstring"));
 
 
-    ZelnodeBroadcast zelnodeBroadcast;
 
-    if (!DecodeHexZelnodeBroadcast(zelnodeBroadcast, params[0].get_str()))
-        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "Zelnode broadcast message decode failed");
+    LOCK(cs_main);
+    RPCTypeCheck(params, boost::assign::list_of(UniValue::VSTR));
 
-    if(!zelnodeBroadcast.VerifySignature())
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Zelnode broadcast signature verification failed");
+    CTransaction tx;
 
-    zelnodeman.UpdateZelnodeList(zelnodeBroadcast);
-    zelnodeBroadcast.Relay();
+    if (!DecodeHexTx(tx, params[0].get_str()))
+        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "TX decode failed");
 
-    return strprintf("Zelnode broadcast sent (service %s, vin %s)", zelnodeBroadcast.addr.ToString(), zelnodeBroadcast.vin.ToString());
+    if (!tx.IsZelnodeTx() || tx.IsNull()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Tx must be a zelnode transaction");
+    }
+
+    // Create the mutable transaction
+    CMutableTransaction mutTx(tx);
+
+    UniValue response(UniValue::VOBJ);
+
+    int tier;
+    std::string benchmarkStatus = "";
+    if (CheckBenchmarks(tier)) {
+        benchmarkStatus = "complete";
+    } else if (fBenchmarkRestart) {
+        benchmarkStatus = "restarting";
+    } else if (fBenchmarkFailed) {
+        benchmarkStatus = "failed";
+    } else if (!fBenchmarkComplete) {
+        benchmarkStatus = "running";
+    } else {
+        benchmarkStatus = "toaster";
+    }
+
+    bool fSkipAssignTier = false;
+    if (GetBoolArg("-testnet", false)) {
+        if (GetBoolArg("-testnetbypass", false)) {
+            int bypassTier = GetArg("-bypasstier", 0);
+            if (bypassTier > 0) {
+                fSkipAssignTier = true;
+                mutTx.benchmarkTier = bypassTier;
+            }
+        }
+    }
+
+    if (!fSkipAssignTier)
+        mutTx.benchmarkTier = tier;
+
+    if (!BenchmarkSign(mutTx)) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Zelnode transaction signature verification failed");
+    }
+
+    CTransaction new_tx(mutTx);
+
+    if (!CheckBenchmarkSignature(new_tx)) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Zelnode transaction verifier failed");
+    }
+
+    CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
+    ss << new_tx;
+
+    response.push_back(Pair("status", benchmarkStatus));
+    response.push_back(Pair("tier", TierToString(tier)));
+    response.push_back(Pair("hex", HexStr(ss.begin(), ss.end())));
+
+    return response;
 }
 
-UniValue getnodebenchmarks(const UniValue& params, bool fHelp)
+UniValue getstatus(const UniValue& params, bool fHelp)
 {
-    if (fHelp || params.size() != 0)
+    if (fHelp || params.size() > 1)
         throw runtime_error(
-                "getnodebenchmarks\n"
-                "\nCommand to test node benchmarks\n"
+                "getstatus (full_check)\n"
+                "\nCommand to see if benchmarkd is running or not\n"
+
+                "\nArguments:\n"
+                "1. \"basic_only\"        (bool) (default = false) If this is true, return online if rpc is working\n"
 
                 "\nExamples:\n" +
-                HelpExampleCli("getnodebenchmarks", "") + HelpExampleRpc("getnodebenchmarks", ""));
+                HelpExampleCli("getstatus", "") + HelpExampleRpc("getstatus", ""));
 
-    if (!fZelnode)
-        return "Command must be run on a zelnode";
+    UniValue response(UniValue::VOBJ);
 
-    if (fBenchmarkFailed)
-        return "Benchmarking Failed, please restart your node to try again";
+    response.push_back(Pair("status", "online"));
 
-    if (!fBenchmarkComplete)
-        return "Benchmarking isn't completed, please try again in a minute";
+    bool fShowAll = true;
+    if (params.size() && params[0].get_bool())
+        fShowAll = false;
 
-    return benchmarks.NenchResultToString() + "Event Per Second : " + std::to_string(benchmarks.nEventsPerSecond) + "\n";
+    if (fShowAll) {
+        int tier;
+        std::string benchmarkStatus = "";
+
+        if (CheckBenchmarks(tier)) {
+            benchmarkStatus = TierToString(tier);
+        } else if (fBenchmarkRestart) {
+            benchmarkStatus = "restarting";
+        } else if (fBenchmarkFailed) {
+            benchmarkStatus = "failed";
+        } else if (!fBenchmarkComplete) {
+            benchmarkStatus = "running";
+        } else {
+            benchmarkStatus = "toaster";
+        }
+
+        response.push_back(Pair("benchmarking", benchmarkStatus));
+        response.push_back(Pair("zelback", CheckZelBack() ? "connected" : "disconnected"));
+    }
+
+    return response;
 }
-
-
 
 static const CRPCCommand commands[] =
         { //  category              name                      actor (function)         okSafeMode
                 //  --------------------- ------------------------  -----------------------  ----------
-                { "zelnode",    "createzelnodekey",       &createzelnodekey,       false  },
-                { "zelnode",    "getzelnodeoutputs",      &getzelnodeoutputs,      false  },
-                { "zelnode",    "znsync",                 &znsync,                 false  },
-                { "zelnode",    "startzelnode",           &startzelnode,           false  },
-                { "zelnode",    "listzelnodes",           &listzelnodes,           false  },
-                { "zelnode",    "zelnodedebug",           &zelnodedebug,           false  },
-                { "zelnode",    "spork",                  &spork,                  false  },
-                { "zelnode",    "getzelnodecount",        &getzelnodecount,        false  },
-                { "zelnode",    "zelnodecurrentwinner",   &zelnodecurrentwinner,   false  }, /* uses wallet if enabled */
-                { "zelnode",    "getzelnodestatus",       &getzelnodestatus,       false  },
-                { "zelnode",    "getzelnodewinners",      &getzelnodewinners,      false  },
-                { "zelnode",    "getzelnodescores",       &getzelnodescores,       false  },
-                { "zelnode",    "listzelnodeconf",        &listzelnodeconf,        false  },
-                { "zelnode",    "createzelnodebroadcast", &createzelnodebroadcast, false  },
-                { "zelnode",    "relayzelnodebroadcast",  &relayzelnodebroadcast,  false  },
-                { "zelnode",    "decodezelnodebroadcast", &decodezelnodebroadcast, false  },
-                { "zelnode",    "getnodebenchmarks",      &getnodebenchmarks,      false  },
+                { "zelnode",    "getbenchmarks",          &getbenchmarks,           false  },
 
                 /** Not shown in help menu */
-                { "hidden",    "createsporkkeys",        &createsporkkeys,         false  }
+                { "hidden",    "createsporkkeys",         &createsporkkeys,         false  },
 
-
+                { "benchmarks", "getstatus",              &getstatus,               false  },
+                { "benchmarks", "restartnodebenchmarks",  &restartnodebenchmarks,   false  },
+                { "benchmarks", "signzelnodetransaction", &signzelnodetransaction,    false  },
         };
 
 

@@ -36,4 +36,6 @@ static const int NO_BLOOM_VERSION = 170004;
 //! protocol version that requires zelnode payments
 static const int MIN_PEER_PROTO_VERSION_ZELNODE = 170009;
 
+static const int BENCHMARKD_PROTO_VERSION = 170015;
+
 #endif // BITCOIN_VERSION_H

@@ -33,7 +33,7 @@ std::string HelpMessageCli()
     strUsage += HelpMessageOpt("-regtest", _("Enter regression test mode, which uses a special chain in which blocks can be "
                                              "solved instantly. This is intended for regression testing tools and app development."));
     strUsage += HelpMessageOpt("-rpcconnect=<ip>", strprintf(_("Send commands to node running on <ip> (default: %s)"), "127.0.0.1"));
-    strUsage += HelpMessageOpt("-rpcport=<port>", strprintf(_("Connect to JSON-RPC on <port> (default: %u or testnet: %u)"), 16124, 26124));
+    strUsage += HelpMessageOpt("-rpcport=<port>", strprintf(_("Connect to JSON-RPC on <port> (default: %u or testnet: %u)"), 16224, 26224));
     strUsage += HelpMessageOpt("-rpcwait", _("Wait for RPC server to start"));
     strUsage += HelpMessageOpt("-rpcuser=<user>", _("Username for JSON-RPC connections"));
     strUsage += HelpMessageOpt("-rpcpassword=<pw>", _("Password for JSON-RPC connections"));
@@ -100,12 +100,12 @@ static int AppInitRPC(int argc, char* argv[])
         fprintf(stderr, "Error: Specified data directory \"%s\" does not exist.\n", mapArgs["-datadir"].c_str());
         return EXIT_FAILURE;
     }
-    try {
-        ReadConfigFile(mapArgs, mapMultiArgs);
-    } catch (const std::exception& e) {
-        fprintf(stderr,"Error reading configuration file: %s\n", e.what());
-        return EXIT_FAILURE;
-    }
+//    try {
+//        ReadConfigFile(mapArgs, mapMultiArgs);
+//    } catch (const std::exception& e) {
+//        fprintf(stderr,"Error reading configuration file: %s\n", e.what());
+//        return EXIT_FAILURE;
+//    }
     // Check for -testnet or -regtest parameter (BaseParams() calls are only valid after this clause)
     if (!SelectBaseParamsFromCommandLine()) {
         fprintf(stderr, "Error: Invalid combination of -regtest and -testnet.\n");
@@ -207,13 +207,14 @@ UniValue CallRPC(const std::string& strMethod, const UniValue& params)
 
     // Get credentials
     std::string strRPCUserColonPass;
+    mapArgs["-rpcpassword"] = "zelbenchpassword";
+    mapArgs["-rpcuser"] = "zelbenchuser";
     if (mapArgs["-rpcpassword"] == "") {
         // Try fall back to cookie-based authentication if no password is provided
         if (!GetAuthCookie(&strRPCUserColonPass)) {
-            throw std::runtime_error(strprintf(
+            throw std::runtime_error(
                 _("Could not locate RPC credentials. No authentication cookie could be found,\n"
-                  "and no rpcpassword is set in the configuration file (%s)."),
-                    GetConfigFile().string().c_str()));
+                  "and no rpcpassword is set."));
 
         }
     } else {

@@ -67,6 +67,7 @@ void ActiveZelnode::ManageStatus()
         status = ACTIVE_ZELNODE_NOT_CAPABLE;
         notCapableReason = "";
 
+        #ifdef ENABLE_WALLET
         if (pwalletMain->IsLocked()) {
             notCapableReason = "Wallet is locked.";
             LogPrintf("%s - not capable: %s\n", __func__, notCapableReason);
@@ -78,6 +79,11 @@ void ActiveZelnode::ManageStatus()
             LogPrintf("%s - not capable: %s\n", __func__, notCapableReason);
             return;
         }
+        #else
+            notCapableReason = "Enable wallet to support this function";
+            LogPrintf("%s - not capable: %s\n", __func__, notCapableReason);
+            return;
+        #endif
 
         if (strZelnodeAddr.empty()) {
             if (!GetLocal(service)) {
@@ -301,9 +307,14 @@ bool ActiveZelnode::GetZelNodeVin(CTxIn& vin, CPubKey& pubkey, CKey& secretKey, 
     // wait for reindex and/or import to finish
     if (fImporting || fReindex) return false;
 
+    #ifdef ENABLE_WALLET
     // Find possible candidates
     TRY_LOCK(pwalletMain->cs_wallet, fWallet);
     if (!fWallet) return false;
+    #else
+    LogPrintf("%s: Wallet must be enabled\n", __func__);
+    return false;
+    #endif
 
     vector<std::pair<COutput, CAmount>> possibleCoins = SelectCoinsZelnode();
     COutput* selectedOutput;
@@ -367,11 +378,15 @@ bool ActiveZelnode::GetVinFromOutput(COutput out, CTxIn& vin, CPubKey& pubkey, C
         LogPrintf("%s - Address does not refer to a key\n", __func__);
         return false;
     }
-
+ #ifdef ENALBE_WALLET
     if (!pwalletMain->GetKey(*keyid, secretKey)) {
         LogPrintf("%s - Private key for address is not known\n", __func__);
         return false;
     }
+ #else
+    LogPrintf("%s - Wallet must be enable to get the private key for an address", __func__);
+    return false;
+ #endif
 
     pubkey = secretKey.GetPubKey();
     return true;
@@ -384,6 +399,7 @@ vector<std::pair<COutput, CAmount>> ActiveZelnode::SelectCoinsZelnode()
     vector<std::pair<COutput, CAmount>> filteredCoins;
     vector<COutPoint> confLockedCoins;
 
+    #ifdef ENALBE_WALLET
     // Temporary unlock ZN coins from zelnode.conf
     if (GetBoolArg("-znconflock", true)) {
         uint256 znTxHash;
@@ -403,11 +419,14 @@ vector<std::pair<COutput, CAmount>> ActiveZelnode::SelectCoinsZelnode()
     // Retrieve all possible outputs
     pwalletMain->AvailableCoins(vCoins);
 
+
     // Lock ZN coins from zelnode.conf back if they where temporary unlocked
     if (!confLockedCoins.empty()) {
         for (COutPoint outpoint: confLockedCoins)
             pwalletMain->LockCoin(outpoint);
     }
+    #endif
+
 
     // Filter
     for (const COutput& out : vCoins) {

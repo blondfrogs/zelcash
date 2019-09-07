@@ -22,6 +22,7 @@
 #define ZELNODE_EXPIRATION_SECONDS (120 * 60)
 #define ZELNODE_REMOVAL_SECONDS (130 * 60)
 #define ZELNODE_CHECK_SECONDS 5
+#define ZELNODE_MIN_BENCHMARK_SECONDS (30 * 60) // Zelnode node
 
 #define ZELNODE_BASIC_COLLATERAL 10000
 #define ZELNODE_SUPER_COLLATERAL 25000
@@ -144,6 +145,10 @@ public:
     int nLastScanningErrorBlockHeight;
     ZelnodePing lastPing;
 
+    int benchmarkTier;
+    std::vector<unsigned char> benchmarkSig;
+    int64_t benchmarkSigTime;
+
     int64_t nLastDsee;  // temporary, do not save. Remove after migration to v12
     int64_t nLastDseep; // temporary, do not save. Remove after migration to v12
 
@@ -176,6 +181,11 @@ public:
         swap(first.nScanningErrorCount, second.nScanningErrorCount);
         swap(first.nLastScanningErrorBlockHeight, second.nLastScanningErrorBlockHeight);
         swap(first.tier, second.tier);
+        if (protocolVersion >= BENCHMARKD_PROTO_VERSION) {
+            swap(first.benchmarkTier, second.benchmarkTier);
+            swap(first.benchmarkSig, second.benchmarkSig);
+            swap(first.benchmarkSigTime, second.benchmarkSigTime);
+        }
     }
 
     Zelnode& operator=(Zelnode from)
@@ -218,6 +228,9 @@ public:
         READWRITE(nScanningErrorCount);
         READWRITE(nLastScanningErrorBlockHeight);
         READWRITE(tier);
+        READWRITE(benchmarkTier);
+        READWRITE(benchmarkSig);
+        READWRITE(benchmarkSigTime);
     }
 
     int64_t SecondsSincePayment();
@@ -331,6 +344,9 @@ public:
     void Relay();
     std::string GetStrMessage();
 
+    bool BenchmarkSign();
+    bool BenchmarkVerifySignature();
+
     ADD_SERIALIZE_METHODS;
 
     template <typename Stream, typename Operation>
@@ -345,6 +361,9 @@ public:
         READWRITE(protocolVersion);
         READWRITE(lastPing);
         READWRITE(nLastDsq);
+        READWRITE(benchmarkTier);
+        READWRITE(benchmarkSig);
+        READWRITE(benchmarkSigTime);
     }
 
     uint256 GetHash()

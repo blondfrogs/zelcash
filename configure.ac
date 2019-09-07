@@ -1,9 +1,9 @@
 dnl require autoconf 2.60 (AS_ECHO/AS_ECHO_N)
 AC_PREREQ([2.60])
-define(_CLIENT_VERSION_MAJOR, 3)
-define(_CLIENT_VERSION_MINOR, 3)
-define(_CLIENT_VERSION_REVISION, 1)
-define(_CLIENT_VERSION_BUILD, 50)
+define(_CLIENT_VERSION_MAJOR, 1)
+define(_CLIENT_VERSION_MINOR, 0)
+define(_CLIENT_VERSION_REVISION, 0)
+define(_CLIENT_VERSION_BUILD, 0)
 define(_ZC_BUILD_VAL, m4_if(m4_eval(_CLIENT_VERSION_BUILD < 25), 1, m4_incr(_CLIENT_VERSION_BUILD), m4_eval(_CLIENT_VERSION_BUILD < 50), 1, m4_eval(_CLIENT_VERSION_BUILD - 24), m4_eval(_CLIENT_VERSION_BUILD == 50), 1, , m4_eval(_CLIENT_VERSION_BUILD - 50)))
 define(_CLIENT_VERSION_SUFFIX, m4_if(m4_eval(_CLIENT_VERSION_BUILD < 25), 1, _CLIENT_VERSION_REVISION-beta$1, m4_eval(_CLIENT_VERSION_BUILD < 50), 1, _CLIENT_VERSION_REVISION-rc$1, m4_eval(_CLIENT_VERSION_BUILD == 50), 1, _CLIENT_VERSION_REVISION, _CLIENT_VERSION_REVISION-$1)))
 define(_CLIENT_VERSION_IS_RELEASE, true)
@@ -88,25 +88,25 @@ AC_PATH_TOOL(CPPFILT,c++filt)
 AC_ARG_ENABLE([wallet],
   [AS_HELP_STRING([--enable-wallet],
   [enable wallet (default is yes)])],
-  [enable_wallet=$enableval],
-  [enable_wallet=yes])
+  [enable_wallet=no],
+  [enable_wallet=no])
 
 AC_ARG_ENABLE([mining],
   [AS_HELP_STRING([--enable-mining],
   [enable mining (default is yes)])],
-  [enable_mining=$enableval],
-  [enable_mining=yes])
+  [enable_mining=no],
+  [enable_mining=no])
 
 AC_ARG_ENABLE([proton],
   [AS_HELP_STRING([--disable-proton],
   [disable Proton (AMQP messaging)])],
-  [use_proton=$enableval],
-  [use_proton=yes])
+  [use_proton=no],
+  [use_proton=no])
 
 AC_ARG_ENABLE(tests,
     AS_HELP_STRING([--enable-tests],[compile tests (default is yes)]),
-    [use_tests=$enableval],
-    [use_tests=yes])
+    [use_tests=no],
+    [use_tests=no])
 
 AC_ARG_ENABLE([asan],
   [AS_HELP_STRING([--enable-asan],
@@ -153,8 +153,8 @@ AC_ARG_ENABLE([glibc-back-compat],
 AC_ARG_ENABLE([zmq],
   [AS_HELP_STRING([--disable-zmq],
   [disable ZMQ notifications])],
-  [use_zmq=$enableval],
-  [use_zmq=yes])
+  [use_zmq=no],
+  [use_zmq=no])
 
 AC_ARG_WITH([protoc-bindir],[AS_HELP_STRING([--with-protoc-bindir=BIN_DIR],[specify protoc bin path])], [protoc_bin_path=$withval], [])
 

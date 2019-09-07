@@ -132,7 +132,8 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "z_getpaymentdisclosure", 1},
     { "z_getpaymentdisclosure", 2},
     { "z_setmigration", 0},
-    { "spork", 1}
+    { "spork", 1},
+    { "getstatus", 0}
 };
 
 class CRPCConvertTable

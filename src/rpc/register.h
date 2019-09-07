@@ -24,11 +24,11 @@ void RegisterZelnodeRPCCommands(CRPCTable &tableRPC);
 
 static inline void RegisterAllCoreRPCCommands(CRPCTable &tableRPC)
 {
-    RegisterBlockchainRPCCommands(tableRPC);
-    RegisterNetRPCCommands(tableRPC);
-    RegisterMiscRPCCommands(tableRPC);
-    RegisterMiningRPCCommands(tableRPC);
-    RegisterRawTransactionRPCCommands(tableRPC);
+//    RegisterBlockchainRPCCommands(tableRPC);
+//    RegisterNetRPCCommands(tableRPC);
+//    RegisterMiscRPCCommands(tableRPC);
+//    RegisterMiningRPCCommands(tableRPC);
+//    RegisterRawTransactionRPCCommands(tableRPC);
     RegisterZelnodeRPCCommands(tableRPC);
 }
 

@@ -93,46 +93,9 @@ bool AppInit(int argc, char* argv[])
 
     try
     {
-        if (!boost::filesystem::is_directory(GetDataDir(false)))
-        {
-            fprintf(stderr, "Error: Specified data directory \"%s\" does not exist.\n", mapArgs["-datadir"].c_str());
-            return false;
-        }
-        try
-        {
-            ReadConfigFile(mapArgs, mapMultiArgs);
-        } catch (const missing_zelcash_conf& e) {
-            fprintf(stderr,
-                (_("Before starting zelcashd, you need to create a configuration file:\n"
-                   "%s\n"
-                   "It can be completely empty! That indicates you are happy with the default\n"
-                   "configuration of zelcashd. But requiring a configuration file to start ensures\n"
-                   "that zelcashd won't accidentally compromise your privacy if there was a default\n"
-                   "option you needed to change.\n"
-                   "\n"
-                   "You can look at the example configuration file for suggestions of default\n"
-                   "options that you may want to change. It should be in one of these locations,\n"
-                   "depending on how you installed Zelcash:\n") +
-                 _("- Source code:  %s\n"
-                   "- .deb package: %s\n")).c_str(),
-                GetConfigFile().string().c_str(),
-                "contrib/debian/examples/zelcash.conf",
-                "/usr/share/doc/zelcash/examples/zelcash.conf");
-            return false;
-        } catch (const std::exception& e) {
-            fprintf(stderr,"Error reading configuration file: %s\n", e.what());
-            return false;
-        }
         // Check for -testnet or -regtest parameter (Params() calls are only valid after this clause)
         if (!SelectParamsFromCommandLine()) {
             fprintf(stderr, "Error: Invalid combination of -regtest and -testnet.\n");
-            return false;
-        }
-
-        // parse zelnode.conf
-        std::string strErr;
-        if (!zelnodeConfig.read(strErr)) {
-            fprintf(stderr, "Error reading zelnode configuration file: %s\n", strErr.c_str());
             return false;
         }
 

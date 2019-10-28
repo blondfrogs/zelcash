@@ -120,7 +120,7 @@ public:
 
     enum tier {
         NONE = 0,
-        BASIC = 1,
+        _BASIC = 1,
         SUPER = 2,
         BAMF = 3
     };
@@ -258,7 +258,7 @@ public:
 
     bool IsBasic()
     {
-        return tier == BASIC;
+        return tier == _BASIC;
     }
 
     bool IsSuper()
@@ -302,7 +302,7 @@ public:
     {
         std::string strStatus = "NONE";
 
-        if (tier == Zelnode::BASIC) strStatus = "BASIC";
+        if (tier == Zelnode::_BASIC) strStatus = "BASIC";
         if (tier == Zelnode::SUPER) strStatus = "SUPER";
         if (tier == Zelnode::BAMF) strStatus = "BAMF";
 

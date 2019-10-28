@@ -119,7 +119,7 @@ public:
     {
         LOCK(cs_vecPayments);
 
-        if (nNodeTier == Zelnode::BASIC) {
+        if (nNodeTier == Zelnode::_BASIC) {
             for (ZelnodePayee& payee : vecBasicPayments) {
                 if (payee.scriptPubKey == payeeIn) {
                     payee.nVotes += nIncrement;
@@ -147,7 +147,7 @@ public:
         }
 
         ZelnodePayee c(payeeIn, nIncrement);
-        if (nNodeTier == Zelnode::BASIC) vecBasicPayments.push_back(c);
+        if (nNodeTier == Zelnode::_BASIC) vecBasicPayments.push_back(c);
         else if (nNodeTier == Zelnode::SUPER) vecSuperPayments.push_back(c);
         else if (nNodeTier == Zelnode::BAMF) vecBAMFPayments.push_back(c);
     }
@@ -362,7 +362,7 @@ public:
 
         COutPoint out = winner.vinZelnode.prevout;
 
-        if (winner.tier == Zelnode::BASIC) {
+        if (winner.tier == Zelnode::_BASIC) {
             if (mapBasicZelnodeLastVote.count(out))
                 if (mapBasicZelnodeLastVote[out] == winner.nBlockHeight)
                     return false;

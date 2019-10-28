@@ -232,9 +232,18 @@ public:
     int readData(const char *pch, unsigned int nBytes);
 };
 
+struct CSerializedNetMsg
+{
+    CSerializedNetMsg() = default;
+    CSerializedNetMsg(CSerializedNetMsg&&) = default;
+    CSerializedNetMsg& operator=(CSerializedNetMsg&&) = default;
+    // No copying, only moves.
+    CSerializedNetMsg(const CSerializedNetMsg& msg) = delete;
+    CSerializedNetMsg& operator=(const CSerializedNetMsg&) = delete;
 
-
-
+    std::vector<unsigned char> data;
+    std::string command;
+};
 
 /** Information about a peer */
 class CNode
@@ -287,6 +296,13 @@ public:
     CBloomFilter* pfilter;
     int nRefCount;
     NodeId id;
+
+    // Challenge sent in VERSION to be answered with MNAUTH (only happens between MNs)
+    mutable CCriticalSection cs_mnauth;
+    uint256 sentMNAuthChallenge;
+    uint256 receivedMNAuthChallenge;
+    uint256 verifiedProRegTxHash;
+    uint256 verifiedPubKeyHash;
 protected:
 
     // Denial-of-service detection/prevention
@@ -349,6 +365,8 @@ private:
     CNode(const CNode&);
     void operator=(const CNode&);
 
+    int nSendVersion;
+
 public:
 
     NodeId GetId() const {
@@ -380,6 +398,9 @@ public:
         BOOST_FOREACH(CNetMessage &msg, vRecvMsg)
             msg.SetVersion(nVersionIn);
     }
+
+    void SetSendVersion(int nVersionIn);
+    int GetSendVersion() const;
 
     CNode* AddRef()
     {

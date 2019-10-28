@@ -1990,7 +1990,7 @@ CAmount GetZelnodeSubsidy(int nHeight, const CAmount& blockValue, int nNodeTier)
 //    std::cout << "Got total of: " << total << std::endl;
 
 
-    if (nNodeTier == Zelnode::BASIC) {
+    if (nNodeTier == Zelnode::_BASIC) {
         return blockValue * 0.0375;
     } else if (nNodeTier == Zelnode::SUPER) {
         return blockValue * 0.0625;
@@ -7001,4 +7001,30 @@ CMutableTransaction CreateNewContextualCMutableTransaction(const Consensus::Para
         }
     }
     return mtx;
+}
+
+bool GetUTXOCoin(const COutPoint& outpoint, CCoins& coin)
+{
+    LOCK(cs_main);
+    if (!pcoinsTip->GetCoins(outpoint.hash, coin))
+        return false;
+    if (!coin.IsAvailable(outpoint.n)) {
+        return false;
+    }
+    return true;
+}
+
+int GetUTXOHeight(const COutPoint& outpoint)
+{
+    // -1 means UTXO is yet unknown or already spent
+    CCoins coin;
+    return GetUTXOCoin(outpoint, coin) ? coin.nHeight : -1;
+}
+
+int GetUTXOConfirmations(const COutPoint& outpoint)
+{
+    // -1 means UTXO is yet unknown or already spent
+    LOCK(cs_main);
+    int nPrevoutHeight = GetUTXOHeight(outpoint);
+    return (nPrevoutHeight > -1 && chainActive.Tip()) ? chainActive.Height() - nPrevoutHeight + 1 : -1;
 }

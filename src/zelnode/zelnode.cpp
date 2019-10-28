@@ -241,7 +241,7 @@ void Zelnode::Check(bool forceCheck)
 
 
         CTxOut vout;
-        if (tier == BASIC) {
+        if (tier == _BASIC) {
             vout = CTxOut(9999.99 * COIN, scriptPubKey);
         } else if (tier == SUPER) {
             vout = CTxOut(24999.99 * COIN, scriptPubKey);
@@ -605,8 +605,8 @@ bool ZelnodeBroadcast::CheckInputsAndAdd(int& nDoS)
 
     LogPrint("zelnode", "znb - Accepted Zelnode entry\n");
 
-    if (GetInputAge(vin) < ZELNODE_MIN_CONFIRMATIONS) {
-        LogPrint("zelnode","znb - Input must have at least %d confirmations\n", ZELNODE_MIN_CONFIRMATIONS);
+    if (GetInputAge(vin) < Params().GetConsensus().nMasternodeMinimumConfirmations) {
+        LogPrint("zelnode","znb - Input must have at least %d confirmations\n", Params().GetConsensus().nMasternodeMinimumConfirmations);
         // maybe we miss few blocks, let this znb to be checked again later
         zelnodeman.mapSeenZelnodeBroadcast.erase(GetHash());
         zelnodeSync.mapSeenSyncZNB.erase(GetHash());
@@ -621,10 +621,10 @@ bool ZelnodeBroadcast::CheckInputsAndAdd(int& nDoS)
     BlockMap::iterator mi = mapBlockIndex.find(hashBlock);
     if (mi != mapBlockIndex.end() && (*mi).second) {
         CBlockIndex* pZNIndex = (*mi).second;                                                        // block for 10000, 25000, 100000 ZEL tx -> 1 confirmation
-        CBlockIndex* pConfIndex = chainActive[pZNIndex->nHeight + ZELNODE_MIN_CONFIRMATIONS - 1]; // block where tx got ZELNODE_MIN_CONFIRMATIONS
+        CBlockIndex* pConfIndex = chainActive[pZNIndex->nHeight + Params().GetConsensus().nMasternodeMinimumConfirmations - 1]; // block where tx got ZELNODE_MIN_CONFIRMATIONS
         if (pConfIndex->GetBlockTime() > sigTime) {
             LogPrint("zelnode","znb - Bad sigTime %d for Zelnode %s (%i conf block is at %d)\n",
-                     sigTime, vin.prevout.hash.ToString(), ZELNODE_MIN_CONFIRMATIONS, pConfIndex->GetBlockTime());
+                     sigTime, vin.prevout.hash.ToString(), Params().GetConsensus().nMasternodeMinimumConfirmations, pConfIndex->GetBlockTime());
             return false;
         }
     }
@@ -825,7 +825,7 @@ std::string TierToString(int tier)
 {
     std::string strStatus = "NONE";
 
-    if (tier == Zelnode::BASIC) strStatus = "BASIC";
+    if (tier == Zelnode::_BASIC) strStatus = "BASIC";
     if (tier == Zelnode::SUPER) strStatus = "SUPER";
     if (tier == Zelnode::BAMF) strStatus = "BAMF";
 

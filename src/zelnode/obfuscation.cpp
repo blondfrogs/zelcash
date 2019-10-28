@@ -52,7 +52,7 @@ bool CObfuScationSigner::IsVinAssociatedWithPubkey(CTxIn& vin, CPubKey& pubkey, 
         for (CTxOut out : txVin.vout) {
             if (out.nValue == ZELNODE_BASIC_COLLATERAL * COIN) {
                 if (out.scriptPubKey == payee2) {
-                    nNodeTier = Zelnode::BASIC;
+                    nNodeTier = Zelnode::_BASIC;
                     return true;
                 }
             }

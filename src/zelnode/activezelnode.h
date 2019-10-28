@@ -17,12 +17,69 @@
 #include "wallet/wallet.h"
 
 
+#include "evo/deterministicmns.h"
+#include "evo/providertx.h"
+
+
 
 #define ACTIVE_ZELNODE_INITIAL 0 // initial state
 #define ACTIVE_ZELNODE_SYNC_IN_PROCESS 1
 #define ACTIVE_ZELNODE_INPUT_TOO_NEW 2
 #define ACTIVE_ZELNODE_NOT_CAPABLE 3
 #define ACTIVE_ZELNODE_STARTED 4
+
+struct CActiveMasternodeInfo;
+class CActiveMasternodeManager;
+
+
+extern CActiveMasternodeInfo activeMasternodeInfo;
+extern CActiveMasternodeManager* activeMasternodeManager;
+
+struct CActiveMasternodeInfo {
+    // Keys for the active Masternode
+    std::unique_ptr<CBLSPublicKey> blsPubKeyOperator;
+    std::unique_ptr<CBLSSecretKey> blsKeyOperator;
+
+    // Initialized while registering Masternode
+    uint256 proTxHash;
+    COutPoint outpoint;
+    CService service;
+};
+
+
+class CActiveMasternodeManager : public CValidationInterface
+{
+public:
+    enum masternode_state_t {
+        MASTERNODE_WAITING_FOR_PROTX,
+        MASTERNODE_POSE_BANNED,
+        MASTERNODE_REMOVED,
+        MASTERNODE_OPERATOR_KEY_CHANGED,
+        MASTERNODE_READY,
+        MASTERNODE_ERROR,
+    };
+
+private:
+    CDeterministicMNCPtr mnListEntry;
+    masternode_state_t state{MASTERNODE_WAITING_FOR_PROTX};
+    std::string strError;
+
+public:
+    virtual void UpdatedBlockTip(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork, bool fInitialDownload);
+
+    void Init();
+
+    CDeterministicMNCPtr GetDMN() const { return mnListEntry; }
+
+    std::string GetStateString() const;
+    std::string GetStatus() const;
+
+    static bool IsValidNetAddr(CService addrIn);
+
+private:
+    bool GetLocalAddress(CService& addrRet);
+};
+
 
 class ActiveZelnode
 {

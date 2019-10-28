@@ -262,7 +262,7 @@ void Payments::FillBlockPayee(CMutableTransaction& txNew, int64_t nFees, std::ma
     if (!zelnodePayments.GetBlockBasicPayee(pindexPrev->nHeight + 1, basicPayee)) {
         //no zelnode detected
         Zelnode winningBasicNode;
-        if (zelnodeman.GetCurrentZelnode(winningBasicNode, Zelnode::BASIC, 1)) {
+        if (zelnodeman.GetCurrentZelnode(winningBasicNode, Zelnode::_BASIC, 1)) {
             basicPayee = GetScriptForDestination(winningBasicNode.pubKeyCollateralAddress.GetID());
         } else {
             LogPrint("zelnode","CreateNewBlock: Failed to detect Basic zelnode to pay\n");
@@ -296,7 +296,7 @@ void Payments::FillBlockPayee(CMutableTransaction& txNew, int64_t nFees, std::ma
     }
 
     CAmount blockValue = GetBlockSubsidy(pindexPrev->nHeight + 1, Params().GetConsensus());
-    CAmount basicZelnodePayment = GetZelnodeSubsidy(pindexPrev->nHeight + 1, blockValue, Zelnode::BASIC);
+    CAmount basicZelnodePayment = GetZelnodeSubsidy(pindexPrev->nHeight + 1, blockValue, Zelnode::_BASIC);
     CAmount superZelnodePayment = GetZelnodeSubsidy(pindexPrev->nHeight + 1, blockValue, Zelnode::SUPER);
     CAmount BAMFZelnodePayment = GetZelnodeSubsidy(pindexPrev->nHeight + 1, blockValue, Zelnode::BAMF);
 
@@ -313,7 +313,7 @@ void Payments::FillBlockPayee(CMutableTransaction& txNew, int64_t nFees, std::ma
         currentIndex++;
 
         if (payments)
-            payments->insert(std::make_pair(Zelnode::BASIC, std::make_pair(basicPayee, basicZelnodePayment)));
+            payments->insert(std::make_pair(Zelnode::_BASIC, std::make_pair(basicPayee, basicZelnodePayment)));
     }
 
     if (hasSuperPayment) {
@@ -537,7 +537,7 @@ bool Payments::AddWinningZelnode(PaymentWinner& winnerIn, int nNodeTier)
         return false;
     }
 
-    if (nNodeTier != Zelnode::BASIC && nNodeTier != Zelnode::SUPER && nNodeTier != Zelnode::BAMF)
+    if (nNodeTier != Zelnode::_BASIC && nNodeTier != Zelnode::SUPER && nNodeTier != Zelnode::BAMF)
         return false;
 
     {
@@ -583,7 +583,7 @@ bool ZelnodeBlockPayees::IsTransactionValid(const CTransaction& txNew)
     ZelnodePayee selectedBAMFPayee;
 
     CAmount nReward = GetBlockSubsidy(nBlockHeight, Params().GetConsensus());
-    CAmount requiredBasicZelnodePayment = GetZelnodeSubsidy(nBlockHeight, nReward, Zelnode::BASIC);
+    CAmount requiredBasicZelnodePayment = GetZelnodeSubsidy(nBlockHeight, nReward, Zelnode::_BASIC);
     CAmount requiredSuperZelnodePayment = GetZelnodeSubsidy(nBlockHeight, nReward, Zelnode::SUPER);
     CAmount requiredBAMFZelnodePayment = GetZelnodeSubsidy(nBlockHeight, nReward, Zelnode::BAMF);
 

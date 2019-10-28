@@ -29,6 +29,7 @@ enum UpgradeIndex {
     UPGRADE_EQUI144_5,	
     UPGRADE_ACADIA,
     UPGRADE_KAMIOOKA,
+    UPGRADE_DIP0003, // Deployment of (txv5 and deterministic ZN lists)
     // NOTE: Also add new upgrades to NetworkUpgradeInfo in upgrades.cpp
     MAX_NETWORK_UPGRADES
 };
@@ -114,7 +115,9 @@ struct Params {
     int64_t nZawyLWMAAveragingWindow;  // N
 
     /** Parameters for Equihash epoche fade **/
-    unsigned long eh_epoch_fade_length = 0;	
+    unsigned long eh_epoch_fade_length = 0;
+
+    int nMasternodeMinimumConfirmations;
 
 };
 } // namespace Consensus

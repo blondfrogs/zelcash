@@ -119,7 +119,10 @@ public:
         consensus.vUpgrades[Consensus::UPGRADE_ACADIA].nActivationHeight = 250000;		// Approx January 12th
 
     consensus.vUpgrades[Consensus::UPGRADE_KAMIOOKA].nProtocolVersion = 170012;
-        consensus.vUpgrades[Consensus::UPGRADE_KAMIOOKA].nActivationHeight = 372500;  // Approx July 2nd - Zel Team Boulder Meetup 
+        consensus.vUpgrades[Consensus::UPGRADE_KAMIOOKA].nActivationHeight = 372500;  // Approx July 2nd - Zel Team Boulder Meetup
+
+        consensus.vUpgrades[Consensus::UPGRADE_DIP0003].nProtocolVersion = 170012;
+        consensus.vUpgrades[Consensus::UPGRADE_DIP0003].nActivationHeight = 1000000;
 
 	consensus.nZawyLWMAAveragingWindow = 60;
 	consensus.eh_epoch_fade_length = 11;
@@ -215,6 +218,8 @@ public:
         // nSproutValuePoolCheckpointBalance = 22145062442933;
         // fZIP209Enabled = true;
         // hashSproutValuePoolCheckpointBlock = uint256S("0000000000c7b46b6bc04b4cbf87d8bb08722aebd51232619b214f7273f8460e");
+
+        consensus.nMasternodeMinimumConfirmations = 15;
     }
 };
 static CMainParams mainParams;
@@ -261,6 +266,9 @@ public:
 
 	    consensus.vUpgrades[Consensus::UPGRADE_KAMIOOKA].nProtocolVersion = 170012;
         consensus.vUpgrades[Consensus::UPGRADE_KAMIOOKA].nActivationHeight = 720;
+
+        consensus.vUpgrades[Consensus::UPGRADE_DIP0003].nProtocolVersion = 170012;
+        consensus.vUpgrades[Consensus::UPGRADE_DIP0003].nActivationHeight = 1200;
 
 
         consensus.nZawyLWMAAveragingWindow = 60;
@@ -356,6 +364,8 @@ public:
         //fZIP209Enabled = true;
         //hashSproutValuePoolCheckpointBlock = uint256S("000a95d08ba5dcbabe881fc6471d11807bcca7df5f1795c99f3ec4580db4279b");
 
+        consensus.nMasternodeMinimumConfirmations = 1;
+
     }
 };
 static CTestNetParams testNetParams;
@@ -406,6 +416,10 @@ public:
     consensus.vUpgrades[Consensus::UPGRADE_KAMIOOKA].nProtocolVersion = 170012;
     consensus.vUpgrades[Consensus::UPGRADE_KAMIOOKA].nActivationHeight =
             Consensus::NetworkUpgrade::NO_ACTIVATION_HEIGHT;
+
+        consensus.vUpgrades[Consensus::UPGRADE_DIP0003].nProtocolVersion = 170012;
+        consensus.vUpgrades[Consensus::UPGRADE_DIP0003].nActivationHeight =
+                Consensus::NetworkUpgrade::NO_ACTIVATION_HEIGHT;
 
 
         // The best chain should have at least this much work.
@@ -468,6 +482,8 @@ public:
         bech32HRPs[SAPLING_FULL_VIEWING_KEY]     = "zviewregtestsapling";
         bech32HRPs[SAPLING_INCOMING_VIEWING_KEY] = "zivkregtestsapling";
         bech32HRPs[SAPLING_EXTENDED_SPEND_KEY]   = "secret-extended-key-regtest";
+
+        consensus.nMasternodeMinimumConfirmations = 1;
     }
 
     void UpdateNetworkUpgradeParameters(Consensus::UpgradeIndex idx, int nActivationHeight)

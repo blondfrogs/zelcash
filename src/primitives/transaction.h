@@ -23,6 +23,16 @@
 #include "zelcash/JoinSplit.hpp"
 #include "zelcash/Proof.hpp"
 
+/** Transaction types */
+enum {
+    TRANSACTION_NORMAL = 0,
+    TRANSACTION_PROVIDER_REGISTER = 1,
+    TRANSACTION_PROVIDER_UPDATE_SERVICE = 2,
+    TRANSACTION_PROVIDER_UPDATE_REGISTRAR = 3,
+    TRANSACTION_PROVIDER_UPDATE_REVOKE = 4,
+    TRANSACTION_COINBASE = 5
+};
+
 // Overwinter transaction version
 static const int32_t OVERWINTER_TX_VERSION = 3;
 static_assert(OVERWINTER_TX_VERSION >= OVERWINTER_MIN_TX_VERSION,
@@ -36,6 +46,8 @@ static_assert(SAPLING_TX_VERSION >= SAPLING_MIN_TX_VERSION,
     "Sapling tx version must not be lower than minimum");
 static_assert(SAPLING_TX_VERSION <= SAPLING_MAX_TX_VERSION,
     "Sapling tx version must not be higher than maximum");
+
+static const int32_t DZN_TX_VERSION = 5;
 
 /**
  * A shielded input to a transaction. It contains data that describes a Spend transfer.
@@ -567,6 +579,11 @@ public:
     const joinsplit_sig_t joinSplitSig = {{0}};
     const binding_sig_t bindingSig = {{0}};
 
+    const std::vector<uint8_t> vExtraPayload; // only available for special transaction types
+    const int16_t nType;
+
+
+
     /** Construct a CTransaction that qualifies as IsNull() */
     CTransaction();
 
@@ -628,8 +645,20 @@ public:
         if (isSaplingV4 && !(vShieldedSpend.empty() && vShieldedOutput.empty())) {
             READWRITE(*const_cast<binding_sig_t*>(&bindingSig));
         }
+
+        if (nVersion >= DZN_TX_VERSION) {
+            READWRITE(*const_cast<int16_t*>(&nType));
+        }
+
+        // if nVersion is 5, the nType is added to the Transaction
+        if (nVersion >= DZN_TX_VERSION && nType != TRANSACTION_NORMAL) {
+            READWRITE(*const_cast<std::vector<uint8_t>*>(&vExtraPayload));
+        }
+
         if (ser_action.ForRead())
             UpdateHash();
+
+
     }
 
     template <typename Stream>
@@ -701,6 +730,7 @@ struct CMutableTransaction
 {
     bool fOverwintered;
     int32_t nVersion;
+
     uint32_t nVersionGroupId;
     std::vector<CTxIn> vin;
     std::vector<CTxOut> vout;
@@ -713,6 +743,10 @@ struct CMutableTransaction
     uint256 joinSplitPubKey;
     CTransaction::joinsplit_sig_t joinSplitSig = {{0}};
     CTransaction::binding_sig_t bindingSig = {{0}};
+
+    // Deterministic Zelnodes
+    std::vector<uint8_t> vExtraPayload; // only available for special transaction types
+    int16_t nType;
 
     CMutableTransaction();
     CMutableTransaction(const CTransaction& tx);
@@ -774,6 +808,15 @@ struct CMutableTransaction
         if (isSaplingV4 && !(vShieldedSpend.empty() && vShieldedOutput.empty())) {
             READWRITE(bindingSig);
         }
+
+        if (nVersion >= DZN_TX_VERSION) {
+            READWRITE(nType);
+        }
+
+        // if nVersion is 5, the nType is added to the Transaction
+        if (nVersion >= DZN_TX_VERSION && nType != TRANSACTION_NORMAL) {
+            READWRITE(vExtraPayload);
+        }
     }
 
     template <typename Stream>
@@ -798,5 +841,9 @@ struct CMutableTransaction
         return !(a == b);
     }
 };
+
+typedef std::shared_ptr<const CTransaction> CTransactionRef;
+static inline CTransactionRef MakeTransactionRef() { return std::make_shared<const CTransaction>(); }
+template <typename Tx> static inline CTransactionRef MakeTransactionRef(Tx&& txIn) { return std::make_shared<const CTransaction>(std::forward<Tx>(txIn)); }
 
 #endif // BITCOIN_PRIMITIVES_TRANSACTION_H

@@ -534,13 +534,13 @@ int ZelnodeMan::CountEnabled(int protocolVersion, int nNodeTier)
     int bamf = 0;
     protocolVersion = protocolVersion == -1 ? zelnodePayments.GetMinZelnodePaymentsProto() : protocolVersion;
 
-    if (nNodeTier == Zelnode::NONE || nNodeTier == Zelnode::BASIC) {
+    if (nNodeTier == Zelnode::NONE || nNodeTier == Zelnode::_BASIC) {
         for (auto& entry : mapBasicZelnodes) {
             entry.second.Check();
             if (entry.second.protocolVersion < protocolVersion || !entry.second.IsEnabled()) continue;
             basic++;
         }
-        if (nNodeTier == Zelnode::BASIC) return basic;
+        if (nNodeTier == Zelnode::_BASIC) return basic;
     }
 
 
@@ -739,7 +739,7 @@ vector<Zelnode*> ZelnodeMan::GetNextZelnodeInQueueForPayment(int nBlockHeight, b
         Make a vector with all of the last paid times
     */
 
-    int nBasicZnCount = CountEnabled(-1, Zelnode::BASIC);
+    int nBasicZnCount = CountEnabled(-1, Zelnode::_BASIC);
     for (auto& entry : mapBasicZelnodes) {
         entry.second.Check();
         if (!entry.second.IsEnabled()) continue;
@@ -876,7 +876,7 @@ bool ZelnodeMan::GetCurrentZelnode(Zelnode& winner, int nNodeTier, int mod, int6
 {
     int64_t score = 0;
 
-    if (nNodeTier == Zelnode::BASIC) {
+    if (nNodeTier == Zelnode::_BASIC) {
         bool found = false;
         for (auto& entry : mapBasicZelnodes) {
             entry.second.Check();
@@ -1005,7 +1005,7 @@ std::vector<pair<int, Zelnode> > ZelnodeMan::GetZelnodeRanks(int nNodeTier, int6
     bool getSuper = false;
     bool getBAMF = false;
 
-    if (nNodeTier == Zelnode::BASIC)
+    if (nNodeTier == Zelnode::_BASIC)
         getBasic = true;
     else if (nNodeTier == Zelnode::SUPER) {
         getSuper = true;

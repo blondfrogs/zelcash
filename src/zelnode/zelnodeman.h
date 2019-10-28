@@ -111,7 +111,7 @@ public:
     std::vector<Zelnode> GetFullZelnodeVector(int nZelnodeTier)
     {
         Check();
-        if (nZelnodeTier == Zelnode::BASIC) {
+        if (nZelnodeTier == Zelnode::_BASIC) {
             return GetFullBasicZelnodeVector();
         } else if (nZelnodeTier == Zelnode::SUPER) {
             return GetFullSuperZelnodeVector();

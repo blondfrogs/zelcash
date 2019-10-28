@@ -397,7 +397,7 @@ UniValue listzelnodes(const UniValue& params, bool fHelp)
         nHeight = pindex->nHeight;
     }
 
-    std::vector<pair<int, Zelnode> > vBasicZelnodeRanks = zelnodeman.GetZelnodeRanks(Zelnode::BASIC, nHeight);
+    std::vector<pair<int, Zelnode> > vBasicZelnodeRanks = zelnodeman.GetZelnodeRanks(Zelnode::_BASIC, nHeight);
     for(PAIRTYPE(int, Zelnode) & s : vBasicZelnodeRanks) {
                     UniValue obj(UniValue::VOBJ);
                     std::string strVin = s.second.vin.prevout.ToString();
@@ -671,7 +671,7 @@ UniValue zelnodecurrentwinner (const UniValue& params, bool fHelp)
     Zelnode bamfWinner;
 
     UniValue ret(UniValue::VOBJ);
-    if (zelnodeman.GetCurrentZelnode(basicWinner, Zelnode::BASIC, 1)) {
+    if (zelnodeman.GetCurrentZelnode(basicWinner, Zelnode::_BASIC, 1)) {
         UniValue obj(UniValue::VOBJ);
 
         obj.push_back(Pair("protocol", (int64_t)basicWinner.protocolVersion));
@@ -735,7 +735,7 @@ UniValue getzelnodecount (const UniValue& params, bool fHelp)
     if (chainActive.Tip())
         zelnodeman.GetNextZelnodeInQueueForPayment(chainActive.Tip()->nHeight, true, nBasicCount, nSuperCount, nBAMFCount);
 
-    int basicCount = zelnodeman.CountEnabled(-1, Zelnode::BASIC);
+    int basicCount = zelnodeman.CountEnabled(-1, Zelnode::_BASIC);
     int superCount = zelnodeman.CountEnabled(-1, Zelnode::SUPER);
     int bamfCount = zelnodeman.CountEnabled(-1, Zelnode::BAMF);
 
@@ -894,7 +894,7 @@ UniValue getzelnodescores (const UniValue& params, bool fHelp)
     }
     UniValue obj(UniValue::VOBJ);
 
-    std::vector<Zelnode> vBasicZelnodes = zelnodeman.GetFullZelnodeVector(Zelnode::BASIC);
+    std::vector<Zelnode> vBasicZelnodes = zelnodeman.GetFullZelnodeVector(Zelnode::_BASIC);
     std::vector<Zelnode> vSuperZelnodes = zelnodeman.GetFullZelnodeVector(Zelnode::SUPER);
     std::vector<Zelnode> vBAMFZelnodes = zelnodeman.GetFullZelnodeVector(Zelnode::BAMF);
     for (int nHeight = chainActive.Tip()->nHeight - nLast; nHeight < chainActive.Tip()->nHeight + 20; nHeight++) {

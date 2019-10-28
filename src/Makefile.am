@@ -26,7 +26,9 @@ BITCOIN_INCLUDES=-I$(builddir) -I$(builddir)/obj $(BDB_CPPFLAGS) $(BOOST_CPPFLAG
 BITCOIN_INCLUDES += -I$(srcdir)/secp256k1/include
 BITCOIN_INCLUDES += -I$(srcdir)/snark
 BITCOIN_INCLUDES += -I$(srcdir)/snark/libsnark
-BITCOIN_INCLUDES += -I$(srcdir)/univalue/include
+BITCOIN_INCLUDES += -I$(srcdir)/univalue/includeG
+
+BLS_LIBS = -lchiabls -lgmp
 
 LIBBITCOIN_SERVER=libbitcoin_server.a
 LIBBITCOIN_COMMON=libbitcoin_common.a
@@ -123,6 +125,8 @@ BITCOIN_CORE_H = \
   amqp/amqpnotificationinterface.h \
   amqp/amqppublishnotifier.h \
   amqp/amqpsender.h \
+  bls/bls.cpp \
+  bls/bls.h \
   arith_uint256.h \
   asyncrpcoperation.h \
   asyncrpcqueue.h \
@@ -144,11 +148,14 @@ BITCOIN_CORE_H = \
   compat/sanity.h \
   compressor.h \
   consensus/consensus.h \
+  consensus/merkle.cpp \
+  consensus/merkle.h \
   consensus/params.h \
   consensus/upgrades.h \
   consensus/validation.h \
   core_io.h \
   core_memusage.h \
+  ctpl.h \
   deprecation.h \
   hash.h \
   httprpc.h \
@@ -162,11 +169,13 @@ BITCOIN_CORE_H = \
   main.h \
   memusage.h \
   merkleblock.h \
+  messagesigner.h \
   metrics.h \
   miner.h \
   mruset.h \
   net.h \
   netbase.h \
+  netmessagemaker.h \
   noui.h \
   policy/fees.h \
   pow.h \
@@ -191,10 +200,13 @@ BITCOIN_CORE_H = \
   serialize.h \
   spentindex.h \
   streams.h \
+  support/allocators/mt_pooled_secure.h \
+  support/allocators/pooled_secure.h \
   support/allocators/secure.h \
   support/allocators/zeroafterfree.h \
   support/cleanse.h \
   support/events.h \
+  support/lockedpool.h \
   support/pagelocker.h \
   sync.h \
   threadsafety.h \
@@ -239,6 +251,13 @@ BITCOIN_CORE_H = \
   zelnode/zelnodeconfig.h \
   zelnode/zelnodeman.h \
   zelnode/zelnodesync.h \
+  evo/cbtx.h \
+  evo/deterministicmns.h \
+  evo/evodb.h \
+  evo/mnauth.h \
+  evo/providertx.h \
+  evo/simplifiedmns.h \
+  evo/specialtx.h \
   zmq/zmqabstractnotifier.h \
   zmq/zmqconfig.h\
   zmq/zmqnotificationinterface.h \
@@ -271,6 +290,7 @@ libbitcoin_server_a_SOURCES = \
   dbwrapper.cpp \
   main.cpp \
   merkleblock.cpp \
+  messagesigner.cpp \
   metrics.cpp \
   miner.cpp \
   net.cpp \
@@ -302,6 +322,13 @@ libbitcoin_server_a_SOURCES = \
   zelnode/zelnodeconfig.cpp \
   zelnode/zelnodeman.cpp \
   zelnode/zelnodesync.cpp \
+  evo/cbtx.cpp \
+  evo/deterministicmns.cpp \
+  evo/evodb.cpp \
+  evo/mnauth.cpp \
+  evo/providertx.cpp \
+  evo/simplifiedmns.cpp \
+  evo/specialtx.cpp \
   $(BITCOIN_CORE_H) \
   $(LIBZELCASH_H)
 
@@ -350,6 +377,9 @@ libbitcoin_wallet_a_SOURCES = \
 crypto_libbitcoin_crypto_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_CONFIG_INCLUDES)
 crypto_libbitcoin_crypto_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 crypto_libbitcoin_crypto_a_SOURCES = \
+  crypto/aes.cpp \
+  crypto/aes.h \
+  crypto/aes_helper.c \
   crypto/common.h \
   crypto/equihash.cpp \
   crypto/equihash.h \
@@ -365,7 +395,8 @@ crypto_libbitcoin_crypto_a_SOURCES = \
   crypto/sha256.cpp \
   crypto/sha256.h \
   crypto/sha512.cpp \
-  crypto/sha512.h
+  crypto/sha512.h \
+  crypto/sph_types.h
 
 if ENABLE_MINING
 EQUIHASH_TROMP_SOURCES = \
@@ -419,6 +450,11 @@ libbitcoin_common_a_SOURCES = \
 libbitcoin_util_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 libbitcoin_util_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libbitcoin_util_a_SOURCES = \
+  bls/bls_batchverifier.h \
+  bls/bls_ies.cpp \
+  bls/bls_ies.h \
+  bls/bls_worker.cpp \
+  bls/bls_worker.h \
   support/pagelocker.cpp \
   chainparamsbase.cpp \
   clientversion.cpp \
@@ -428,6 +464,7 @@ libbitcoin_util_a_SOURCES = \
   random.cpp \
   rpc/protocol.cpp \
   support/cleanse.cpp \
+  support/lockedpool.cpp \
   sync.cpp \
   uint256.cpp \
   util.cpp \
@@ -489,6 +526,9 @@ zelcashd_LDADD += \
   $(LIBBITCOIN_CRYPTO) \
   $(LIBZELCASH_LIBS)
 
+
+zelcashd_LDADD += $(BLS_LIBS)
+
 # bitcoin-cli binary #
 zelcash_cli_SOURCES = bitcoin-cli.cpp
 zelcash_cli_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(EVENT_CFLAGS)
@@ -513,6 +553,8 @@ zelcash_cli_LDADD = \
   $(LIBZELCASH_LIBS)
 #
 
+zelcash_cli_LDADD += $(BLS_LIBS)
+
 # zelcash-tx binary #
 zelcash_tx_SOURCES = bitcoin-tx.cpp
 zelcash_tx_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
@@ -534,7 +576,7 @@ zelcash_tx_LDADD = \
   $(LIBBITCOIN_CRYPTO) \
   $(LIBZELCASH_LIBS)
 
-zelcash_tx_LDADD += $(BOOST_LIBS) $(CRYPTO_LIBS)
+zelcash_tx_LDADD += $(BOOST_LIBS) $(CRYPTO_LIBS) $(BLS_LIBS)
 #
 
 # zelcash protocol primitives #
@@ -584,7 +626,7 @@ if GLIBC_BACK_COMPAT
 endif
 
 libzelcashconsensus_la_LDFLAGS = $(AM_LDFLAGS) -no-undefined $(RELDFLAGS)
-libzelcashconsensus_la_LIBADD = $(LIBSECP256K1)
+libzelcashconsensus_la_LIBADD = $(LIBSECP256K1) $(BLS_LIBS)
 libzelcashconsensus_la_CPPFLAGS = $(AM_CPPFLAGS) -I$(builddir)/obj -I$(srcdir)/secp256k1/include -DBUILD_BITCOIN_INTERNAL
 libzelcashconsensus_la_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 
@@ -593,9 +635,18 @@ endif
 
 CLEANFILES = leveldb/libleveldb.a leveldb/libmemenv.a *.gcda *.gcno */*.gcno wallet/*/*.gcno
 
+IMMER_DIST = immer
+
+CTAES_DIST =  crypto/ctaes/bench.c
+CTAES_DIST += crypto/ctaes/ctaes.c
+CTAES_DIST += crypto/ctaes/ctaes.h
+CTAES_DIST += crypto/ctaes/README.md
+CTAES_DIST += crypto/ctaes/test.c
+
 DISTCLEANFILES = obj/build.h
 
 EXTRA_DIST = leveldb snark
+EXTRA_DIST += $(IMMER_DIST) $(CTAES_DIST)
 
 clean-local:
 	-$(MAKE) -C leveldb clean

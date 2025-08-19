@@ -59,6 +59,16 @@ const struct NUInfo NetworkUpgradeInfo[Consensus::MAX_NETWORK_UPGRADES] = {
             /*.nBranchId =*/ 0x76b809bb,
             /*.strName =*/ "P2SHNodes",
             /*.strInfo =*/ "Multisig Node Upgrade",
+    },
+    {
+            /*.nBranchId =*/ 0x76b809bb,
+            /*.strName =*/ "FluxnodeQuorum",
+            /*.strInfo =*/ "Replace POW with fluxnode quorum block production",
+    },
+    {
+            /*.nBranchId =*/ 0x76b809bb,
+            /*.strName =*/ "FluxnodeBLS",
+            /*.strInfo =*/ "Enable BLS signatures for fluxnode quorum consensus",
     }
 };
 

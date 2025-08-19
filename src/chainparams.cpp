@@ -144,6 +144,13 @@ public:
         consensus.vUpgrades[Consensus::UPGRADE_P2SHNODES].nProtocolVersion = 170019;
         consensus.vUpgrades[Consensus::UPGRADE_P2SHNODES].nActivationHeight = 1549500;
 
+        // Fluxnode consensus upgrade (replace POW with fluxnode block production)
+        consensus.vUpgrades[Consensus::UPGRADE_FLUXNODE_QUORUM].nProtocolVersion = 170020;
+        consensus.vUpgrades[Consensus::UPGRADE_FLUXNODE_QUORUM].nActivationHeight = 2000000;
+        
+        // BLS signature upgrade for fluxnode consensus
+        consensus.vUpgrades[Consensus::UPGRADE_FLUXNODE_BLS].nProtocolVersion = 170021;
+        consensus.vUpgrades[Consensus::UPGRADE_FLUXNODE_BLS].nActivationHeight = 2020000; // 20000 blocks after fluxnode consensus
 
         consensus.nZawyLWMAAveragingWindow = 60;
 	    consensus.eh_epoch_fade_length = 11;
@@ -351,6 +358,14 @@ public:
         consensus.vUpgrades[Consensus::UPGRADE_P2SHNODES].nProtocolVersion = 170019;
         consensus.vUpgrades[Consensus::UPGRADE_P2SHNODES].nActivationHeight = 600;
 
+        // Fluxnode consensus upgrade (replace POW with fluxnode block production)
+        consensus.vUpgrades[Consensus::UPGRADE_FLUXNODE_QUORUM].nProtocolVersion = 170020;
+        consensus.vUpgrades[Consensus::UPGRADE_FLUXNODE_QUORUM].nActivationHeight = 800;
+
+        // BLS signature upgrade for fluxnode consensus
+        consensus.vUpgrades[Consensus::UPGRADE_FLUXNODE_BLS].nProtocolVersion = 170021;
+        consensus.vUpgrades[Consensus::UPGRADE_FLUXNODE_BLS].nActivationHeight = 1000;
+
         consensus.nZawyLWMAAveragingWindow = 60;
 	    consensus.eh_epoch_fade_length = 10;
 
@@ -534,6 +549,16 @@ public:
 
         consensus.vUpgrades[Consensus::UPGRADE_P2SHNODES].nProtocolVersion = 170019;
         consensus.vUpgrades[Consensus::UPGRADE_P2SHNODES].nActivationHeight =
+                Consensus::NetworkUpgrade::NO_ACTIVATION_HEIGHT;
+
+        // Fluxnode consensus upgrade (replace POW with fluxnode block production)
+        consensus.vUpgrades[Consensus::UPGRADE_FLUXNODE_QUORUM].nProtocolVersion = 170020;
+        consensus.vUpgrades[Consensus::UPGRADE_FLUXNODE_QUORUM].nActivationHeight =
+                Consensus::NetworkUpgrade::NO_ACTIVATION_HEIGHT;
+
+        // BLS signature upgrade for fluxnode consensus
+        consensus.vUpgrades[Consensus::UPGRADE_FLUXNODE_BLS].nProtocolVersion = 170021;
+        consensus.vUpgrades[Consensus::UPGRADE_FLUXNODE_BLS].nActivationHeight =
                 Consensus::NetworkUpgrade::NO_ACTIVATION_HEIGHT;
 
 

@@ -13,6 +13,8 @@
 
 #include "key_io.h"
 #include "fluxnode/benchmarks.h"
+#include "consensus/bls.h"
+#include "consensus/bls_key_manager.h"
 
 
 void ActiveFluxnode::ManageDeterministricFluxnode()
@@ -43,14 +45,20 @@ void ActiveFluxnode::ManageDeterministricFluxnode()
 
         // If we don't have one in our mempool. That means it is time to confirm the fluxnode
         if (nHeight - nLastTriedToConfirm > 3) { // Only try this every couple blocks
-            activeFluxnode.BuildDeterministicConfirmTx(mutTx, FluxnodeUpdateType::INITIAL_CONFIRM);
             LogPrintf("Fluxnode found in start tracker. Creating Initial Confirm Transactions %s\n", activeFluxnode.deterministicOutPoint.ToString());
+            if (!activeFluxnode.BuildDeterministicConfirmTx(mutTx, errorMessage, FluxnodeUpdateType::INITIAL_CONFIRM)) {
+                error("Failed to create deterministic fluxnode initial confirm transaction for outpoint %s, Error message: %s", activeFluxnode.deterministicOutPoint.ToString(), errorMessage);
+                return;
+            }
         } else {
             return;
         }
     } else if (g_fluxnodeCache.CheckIfNeedsNextConfirm(activeFluxnode.deterministicOutPoint, nHeight)) {
-        activeFluxnode.BuildDeterministicConfirmTx(mutTx, FluxnodeUpdateType::UPDATE_CONFIRM);
         LogPrintf("Time to Confirm Fluxnode reached, Creating Update Confirm Transaction on height: %s for outpoint: %s\n", nHeight, activeFluxnode.deterministicOutPoint.ToString());
+        if (!activeFluxnode.BuildDeterministicConfirmTx(mutTx, errorMessage, FluxnodeUpdateType::UPDATE_CONFIRM)) {
+            error("Failed to create deterministic fluxnode update confirm transaction for outpoint %s, Error message: %s", activeFluxnode.deterministicOutPoint.ToString(), errorMessage);
+            return;
+        }
     } else {
         LogPrintf("Fluxnode found nothing to do on height: %s for outpoint: %s\n", nHeight, activeFluxnode.deterministicOutPoint.ToString());
         return;
@@ -306,7 +314,14 @@ bool ActiveFluxnode::SignDeterministicConfirmTx(CMutableTransaction& mutableTran
     // We need to sign the mutable transaction
     mutableTransaction.sigTime = GetAdjustedTime();
 
-    std::string strMessage = mutableTransaction.collateralIn.ToString() + std::to_string(mutableTransaction.collateralIn.n) + std::to_string(mutableTransaction.nUpdateType) + std::to_string(mutableTransaction.sigTime);
+    // Build message - include BLS pubkey if present to prevent tampering
+    std::string strMessage = mutableTransaction.collateralIn.ToString() + std::to_string(mutableTransaction.collateralIn.n) + 
+                            std::to_string(mutableTransaction.nUpdateType) + std::to_string(mutableTransaction.sigTime);
+    
+    // Include BLS pubkey in signed message if present (it should already be in the transaction from BuildDeterministicConfirmTx)
+    if (!mutableTransaction.vchBLSPubKey.empty()) {
+        strMessage += HexStr(mutableTransaction.vchBLSPubKey);
+    }
 
     // send to all nodes
     CPubKey pubKeyFluxnode;
@@ -377,10 +392,10 @@ bool ActiveFluxnode::BuildDeterministicStartTx(std::string strKeyFluxnode, std::
     return true;
 }
 
-void ActiveFluxnode::BuildDeterministicConfirmTx(CMutableTransaction& mutTransaction, const int nUpdateType)
+bool ActiveFluxnode::BuildDeterministicConfirmTx(CMutableTransaction& mutTransaction, std::string& errorMessage, const int nUpdateType)
 {
-    // When we should move to upgraded version for fluxnode transactions
-    bool fP2SHNodesActive = NetworkUpgradeActive(chainActive.Height(), Params().GetConsensus(), Consensus::UPGRADE_P2SHNODES);
+    // Check if Quorum is active. Once active. we want to start to use tx version 7 for start and confirm transactions by default
+    bool fFluxNodeQuorumActive = NetworkUpgradeActive(chainActive.Height(), Params().GetConsensus(), Consensus::UPGRADE_FLUXNODE_QUORUM);
 
     // If this is the first confirmation tx we check for INITIAL_CONFIRM, and we must check the started list
     if (nUpdateType == FluxnodeUpdateType::INITIAL_CONFIRM && g_fluxnodeCache.mapStartTxTracker.count(activeFluxnode.deterministicOutPoint)) {
@@ -391,7 +406,13 @@ void ActiveFluxnode::BuildDeterministicConfirmTx(CMutableTransaction& mutTransac
     // If this is the second confirmation tx we check for UPDATE_CONFIRM, and we must check the confirmed list
     if (nUpdateType == FluxnodeUpdateType::UPDATE_CONFIRM && g_fluxnodeCache.mapConfirmedFluxnodeData.count(activeFluxnode.deterministicOutPoint)) {
         // Set the active Fluxnode to the correct tx version, so it can create the confirmation transaction with the same version (5 or 6)
-        nActiveFluxNodeTxVersion = g_fluxnodeCache.mapConfirmedFluxnodeData.at(activeFluxnode.deterministicOutPoint).nType;
+        nActiveFluxNodeTxVersion = g_fluxnodeCache.mapConfirmedFluxnodeData.at(
+                activeFluxnode.deterministicOutPoint).nType;
+    }
+
+    // Version 7 will be enforced on UPGRADE UPGRADE_FLUXNODE_BLS. So once quorum passed, we need to start using it.
+    if (fFluxNodeQuorumActive) {
+        nActiveFluxNodeTxVersion = FLUXNODE_TX_QUORUM_BLS_VERSION;
     }
 
     // Enforce a valid fluxnode tx version
@@ -404,17 +425,69 @@ void ActiveFluxnode::BuildDeterministicConfirmTx(CMutableTransaction& mutTransac
     mutTransaction.nType = FLUXNODE_CONFIRM_TX_TYPE;
     mutTransaction.collateralIn = deterministicOutPoint;
     mutTransaction.nUpdateType = nUpdateType;
+    
+    // If using BLS version, populate BLS public key in the transaction
+    if (mutTransaction.nVersion == FLUXNODE_TX_QUORUM_BLS_VERSION) {
+
+        // If we are updating an already existing confirmed node, that already has a bls key assigned skip this.
+        if (nUpdateType == FluxnodeUpdateType::UPDATE_CONFIRM &&
+            g_fluxnodeCache.mapConfirmedFluxnodeData.count(activeFluxnode.deterministicOutPoint)) {
+            if (!g_fluxnodeCache.mapConfirmedFluxnodeData.at(activeFluxnode.deterministicOutPoint).vchBLSPubKey.empty()) {
+                LogPrint("fluxnode", "%s : BLS public key already assigned. Skipping BLS Key generation\n", __func__);
+                return true;
+            }
+        }
+
+        std::string errorMessage;
+        
+        // Get the fluxnode private key to derive BLS key
+        CKey keyFluxnode;
+        CPubKey pubKeyFluxnode;
+        if (!obfuScationSigner.SetKey(strFluxnodePrivKey, errorMessage, keyFluxnode, pubKeyFluxnode)) {
+            error("%s : Failed to get fluxnode key for BLS derivation: %s", __func__, errorMessage.c_str());
+            return false;
+        }
+        
+        // Initialize BLS key manager with the ECDSA key
+        if (!blsKeyManager.HasActiveKey()) {
+            if (!blsKeyManager.InitializeFromECDSA(keyFluxnode)) {
+                errorMessage = "Failed to initialize BLS key from ECDSA key";
+                error("%s : %s", __func__, errorMessage.c_str());
+                return false;
+            }
+        }
+        
+        // Get the BLS public key
+        CBLSSecretKey blsSecret;
+        CBLSPublicKey blsPublic;
+        if (!blsKeyManager.GetActiveKeys(blsSecret, blsPublic)) {
+            errorMessage = "Failed to get BLS public key";
+            error("%s : %s", __func__, errorMessage.c_str());
+            return false;
+        }
+        
+        // Set the BLS public key in the transaction
+        mutTransaction.vchBLSPubKey = blsPublic.vchPubKey;
+        
+        LogPrint("fluxnode", "%s : Added BLS public key to confirm transaction\n", __func__);
+        return true;
+    }
 }
 
 void ActiveFluxnode::EnforceActiveFluxNodeTxVersion()
 {
     // Check for version 5
-    if (nActiveFluxNodeTxVersion == FLUXNODE_TX_VERSION) {
+    if (nActiveFluxNodeTxVersion == FLUXNODE_TX_VERSION) { // 5
         return;
     }
 
     // Check for version 6
-    if (nActiveFluxNodeTxVersion == FLUXNODE_TX_UPGRADEABLE_VERSION) {
+    if (nActiveFluxNodeTxVersion == FLUXNODE_TX_UPGRADEABLE_VERSION) { // 6
+        return;
+    }
+    
+    // Check for version 7 (BLS)
+    if (nActiveFluxNodeTxVersion == FLUXNODE_TX_QUORUM_BLS_VERSION) { // 7
         return;
     }
 

@@ -69,6 +69,11 @@
 #define V1_FLUXNODE_PERCENT_NIMBUS 0.0625
 #define V1_FLUXNODE_PERCENT_STRATUS 0.15
 
+
+// Snapshot interval for deterministic consensus
+static const int FLUXNODE_SNAPSHOT_INTERVAL = 100;  // Every 100 blocks
+static const int FLUXNODE_MAX_SNAPSHOTS = 3;        // Keep 3 snapshots
+
 class FluxnodeCache;
 class CFluxnodeTxBlockUndo;
 class ActiveFluxnode;
@@ -147,6 +152,9 @@ public:
     int8_t nStatus;
 
     CAmount nCollateral;
+    
+    // BLS public key for fluxnode consensus (after BLS activation)
+    std::vector<unsigned char> vchBLSPubKey;
 
     void SetNull() {
         nType = FLUXNODE_NO_TYPE;
@@ -161,6 +169,7 @@ public:
         nFluxTxVersion = 0;
         P2SHRedeemScript.clear();
         nTransactionType = FLUXNODE_NO_TYPE;
+        vchBLSPubKey.clear();
     }
 
     FluxnodeCacheData() {
@@ -245,6 +254,9 @@ public:
             if (nFluxTxVersion == FLUXNODE_INTERNAL_P2SH_TX_VERSION) {
                 READWRITE(*(CScriptBase*)(&P2SHRedeemScript));
             }
+            if ((nType&FLUX_TX_HAS_BLS) == FLUX_TX_HAS_BLS) {
+                READWRITE(vchBLSPubKey);
+            }
         } else {
             // We must retain backwards compatibility with older transactions
             READWRITE(collateralIn);
@@ -263,6 +275,30 @@ public:
         }
     }
 };
+
+// Snapshot of fluxnode state at a specific height
+class FluxnodeSnapshot {
+public:
+    int nHeight;
+    uint256 blockHash;
+    int64_t nTimestamp;
+    std::map<COutPoint, FluxnodeCacheData> mapFluxnodeData;
+
+    FluxnodeSnapshot() : nHeight(0), nTimestamp(0) {}
+    FluxnodeSnapshot(int height, const uint256& hash) :
+            nHeight(height), blockHash(hash), nTimestamp(GetTime()) {}
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(nHeight);
+        READWRITE(blockHash);
+        READWRITE(nTimestamp);
+        READWRITE(mapFluxnodeData);
+    }
+};
+
 
 class FluxnodeListData {
 public:
@@ -327,6 +363,16 @@ public:
 
 void FillBlockPayeeWithDeterministicPayouts(CMutableTransaction& txNew, CAmount nFees, std::map<int, std::pair<CScript, CAmount>>* payments);
 
+// Structure to hold confirm transaction data temporarily
+struct ConfirmTxData {
+    std::string ip;
+    std::vector<unsigned char> vchBLSPubKey;
+    
+    ConfirmTxData() {}
+    ConfirmTxData(const std::string& _ip, const std::vector<unsigned char>& _bls = std::vector<unsigned char>()) 
+        : ip(_ip), vchBLSPubKey(_bls) {}
+};
+
 class FluxnodeCache {
 public:
 
@@ -346,8 +392,8 @@ public:
     // Map only used by local cache to inform the global cache to undo Fluxnode added to DoS tacker, and put them back into the Started Fluxnode tracking
     std::map<int, std::set<COutPoint>> mapDOSToUndo;
 
-    // Set only used by local cache to inform the global cache when Flushing to move Started Fluxnodes to the Confirm list and updating IP address
-    std::map<COutPoint, std::string> mapAddToConfirm;
+    // Set only used by local cache to inform the global cache when Flushing to move Started Fluxnodes to the Confirm list and updating IP address and BLS pubkey
+    std::map<COutPoint, ConfirmTxData> mapAddToConfirm;
 
     // Int only used by local cache to inform the global cache when Flushing to set the Started Fluxnodes Confirm Height
     int setAddToConfirmHeight;
@@ -355,8 +401,8 @@ public:
     // Set only used by local chache to inform the global cache when Flushing to undo the Confirm Fluxnodes
     std::set<COutPoint> setUndoAddToConfirm;
 
-    // Set only used by local cache to inform the global cache when Flushing to update the Confirm Fluxnodes nLastConfirmHeight and IP address
-    std::map<COutPoint, std::string> mapAddToUpdateConfirm;
+    // Set only used by local cache to inform the global cache when Flushing to update the Confirm Fluxnodes nLastConfirmHeight, IP address and BLS pubkey
+    std::map<COutPoint, ConfirmTxData> mapAddToUpdateConfirm;
 
     // Int only used by local cache to inform the global cache when Flushing to update the Confirm Fluxnodes nLastConfirmHeight
     int setAddToUpdateConfirmHeight;
@@ -385,6 +431,11 @@ public:
     FluxnodeCache(){
         SetNull();
     }
+    
+    // Snapshot functions for deterministic consensus
+    bool CreateSnapshot(int nHeight, const uint256& blockHash);
+    bool GetSnapshotForHeight(int nHeight, FluxnodeSnapshot& snapshot);
+    int GetNearestSnapshotHeight(int nHeight);
 
     void InitMapFluxnodeList() {
         for (int currentTier = CUMULUS; currentTier != LAST; currentTier++ )

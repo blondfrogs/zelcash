@@ -9,6 +9,7 @@
 #include <undo.h>
 #include <utilmoneystr.h>
 #include "fluxnode/fluxnode.h"
+#include "fluxnode/fluxnodecachedb.h"
 #include "addrman.h"
 #include "fluxnode/obfuscation.h"
 #include "sync.h"
@@ -212,7 +213,10 @@ void GetUndoDataForPaidFluxnodes(CFluxnodeTxBlockUndo& fluxnodeTxBlockUndo, Flux
 void FluxnodeCache::AddNewStart(const CTransaction& p_transaction, const int p_nHeight, int nTier, const CAmount nCollateral)
 {
     FluxnodeCacheData data;
-    if (p_transaction.nVersion == FLUXNODE_TX_UPGRADEABLE_VERSION) {
+    if (p_transaction.nVersion == FLUXNODE_TX_UPGRADEABLE_VERSION || p_transaction.nVersion == FLUXNODE_TX_QUORUM_BLS_VERSION) {
+
+        /** With FLUXNODE_TX_QUORUM_BLS_VERSION, the start transaction doesn't change. Process it the same
+         * with Version 6 and Version 7, just update nType **/
 
         /**
          * With the new Upgraded Transaction Version we have to modify the types
@@ -222,7 +226,10 @@ void FluxnodeCache::AddNewStart(const CTransaction& p_transaction, const int p_n
          * P2SHRedeemScript is now available from the transaction
          * nCollateral is now always a part of the Cache
          */
-        data.nType = FLUXNODE_TX_TYPE_UPGRADED;
+        if (p_transaction.nVersion == FLUXNODE_TX_UPGRADEABLE_VERSION)
+            data.nType = FLUXNODE_TX_TYPE_UPGRADED;
+        else if (p_transaction.nVersion == FLUXNODE_TX_QUORUM_BLS_VERSION)
+            data.nType = FLUXNODE_TX_TYPE_UPGRADED | FLUX_TX_HAS_BLS; // 10000000 | 01000000 = 11000000
         data.nFluxTxVersion = p_transaction.nFluxTxVersion;
         data.nTransactionType = FLUXNODE_START_TX_TYPE;
         data.P2SHRedeemScript = p_transaction.P2SHRedeemScript;
@@ -236,6 +243,9 @@ void FluxnodeCache::AddNewStart(const CTransaction& p_transaction, const int p_n
         data.nAddedBlockHeight = p_nHeight;
         data.nTier = nTier;
         data.nCollateral = nCollateral;
+
+        // For BLS data, vchPubkey is set to empty by default, and isn't in start transaction data. So no need
+        // to set it here.
     } else {
         data.nStatus = FLUXNODE_TX_STARTED;
         data.nType = FLUXNODE_START_TX_TYPE;
@@ -267,7 +277,7 @@ void FluxnodeCache::UndoNewStart(const CTransaction& p_transaction, const int p_
 void FluxnodeCache::AddNewConfirm(const CTransaction& p_transaction, const int p_nHeight)
 {
     LOCK(cs);
-    mapAddToConfirm[p_transaction.collateralIn] = p_transaction.ip;
+    mapAddToConfirm[p_transaction.collateralIn] = ConfirmTxData(p_transaction.ip, p_transaction.vchBLSPubKey);
     setAddToConfirmHeight = p_nHeight;
 }
 
@@ -280,7 +290,7 @@ void FluxnodeCache::UndoNewConfirm(const CTransaction& p_transaction)
 void FluxnodeCache::AddUpdateConfirm(const CTransaction& p_transaction, const int p_nHeight)
 {
     LOCK(cs);
-    mapAddToUpdateConfirm[p_transaction.collateralIn] = p_transaction.ip;
+    mapAddToUpdateConfirm[p_transaction.collateralIn] = ConfirmTxData(p_transaction.ip, p_transaction.vchBLSPubKey);
     setAddToUpdateConfirmHeight = p_nHeight;
 }
 
@@ -871,7 +881,13 @@ bool FluxnodeCache::Flush()
             data.nLastConfirmedBlockHeight = setAddToConfirmHeight;
 
             data.nLastPaidHeight = 0;
-            data.ip = item.second;
+            data.ip = item.second.ip;
+
+            if (!item.second.vchBLSPubKey.empty()) {
+                // If we assign the vchBLSPubKey, assign the nType so it can serialize correctly to the database
+                data.nType = FLUXNODE_TX_TYPE_UPGRADED | FLUX_TX_HAS_BLS;
+                data.vchBLSPubKey = item.second.vchBLSPubKey;
+            }
 
             // Add the data to the confirm trackers
             g_fluxnodeCache.mapConfirmedFluxnodeData[data.collateralIn] = data;
@@ -954,8 +970,17 @@ bool FluxnodeCache::Flush()
             // Update the nLastConfirmedBlockHeight
             g_fluxnodeCache.mapConfirmedFluxnodeData.at(item.first).nLastConfirmedBlockHeight = setAddToUpdateConfirmHeight;
 
-            // Update IP address
-            g_fluxnodeCache.mapConfirmedFluxnodeData.at(item.first).ip = item.second;
+            // Update IP address (BLS public key is immutable once set)
+            g_fluxnodeCache.mapConfirmedFluxnodeData.at(item.first).ip = item.second.ip;
+            
+            // BLS public key should NOT be updated after initial confirmation
+            // It's deterministically derived from the ECDSA key which is immutable
+            // Only set it if it's currently empty (for backward compatibility during activation)
+            if (g_fluxnodeCache.mapConfirmedFluxnodeData.at(item.first).vchBLSPubKey.empty() && !item.second.vchBLSPubKey.empty()) {
+                // If we assign the vchBLSPubKey, assign the nType so it can serialize correctly to the database
+                g_fluxnodeCache.mapConfirmedFluxnodeData.at(item.first).vchBLSPubKey = item.second.vchBLSPubKey;
+                g_fluxnodeCache.mapConfirmedFluxnodeData.at(item.first).nType = FLUXNODE_TX_TYPE_UPGRADED | FLUX_TX_HAS_BLS;
+            }
 
             g_fluxnodeCache.setDirtyOutPoint.insert(item.first);
         } else {
@@ -1392,5 +1417,88 @@ void FluxnodeCache::LogDebugData(const int& nHeight, const uint256& blockhash, b
                   nHeight, blockhash.GetHex(), printme, printme3);
     }
 
+}
+
+// Snapshot functions for deterministic consensus
+bool FluxnodeCache::CreateSnapshot(int nHeight, const uint256& blockHash)
+{
+    LOCK(cs);
+    
+    if (!pFluxnodeDB) {
+        LogPrintf("Error: FluxnodeCache::CreateSnapshot - database not initialized\n");
+        return false;
+    }
+    
+    // Only create snapshots at interval heights
+    if (nHeight % FLUXNODE_SNAPSHOT_INTERVAL != 0) {
+        return true; // Not a snapshot height
+    }
+    
+    // Create the snapshot
+    FluxnodeSnapshot snapshot(nHeight, blockHash);
+    snapshot.mapFluxnodeData = mapConfirmedFluxnodeData; // Copy current confirmed state
+    
+    // Write to database
+    if (!pFluxnodeDB->WriteFluxnodeSnapshot(snapshot)) {
+        LogPrintf("Error: Failed to write fluxnode snapshot at height %d\n", nHeight);
+        return false;
+    }
+    
+    // Cleanup old snapshots
+    pFluxnodeDB->CleanupOldSnapshots(nHeight);
+    
+    LogPrintf("Created fluxnode snapshot at height %d with %d nodes\n", 
+             nHeight, snapshot.mapFluxnodeData.size());
+    
+    return true;
+}
+
+bool FluxnodeCache::GetSnapshotForHeight(int nHeight, FluxnodeSnapshot& snapshot)
+{
+    if (!pFluxnodeDB) {
+        LogPrintf("Error: FluxnodeCache::GetSnapshotForHeight - database not initialized\n");
+        return false;
+    }
+    
+    // Find the nearest snapshot height
+    int nSnapshotHeight = GetNearestSnapshotHeight(nHeight);
+    if (nSnapshotHeight < 0) {
+        LogPrintf("Error: No snapshot available for height %d\n", nHeight);
+        return false;
+    }
+    
+    // Read the snapshot
+    if (!pFluxnodeDB->ReadFluxnodeSnapshot(nSnapshotHeight, snapshot)) {
+        LogPrintf("Error: Failed to read snapshot at height %d\n", nSnapshotHeight);
+        return false;
+    }
+
+    LogPrintf("Loaded snapshot from height %d for request at height %d (%d nodes)\n", 
+             nSnapshotHeight, nHeight, snapshot.mapFluxnodeData.size());
+    
+    return true;
+}
+
+int FluxnodeCache::GetNearestSnapshotHeight(int nHeight)
+{
+    if (!pFluxnodeDB) {
+        return -1;
+    }
+    
+    // Get all available snapshot heights
+    std::vector<int> vHeights = pFluxnodeDB->GetSnapshotHeights();
+    if (vHeights.empty()) {
+        return -1;
+    }
+    
+    // Find the most recent snapshot before or at the requested height
+    int nBestHeight = -1;
+    for (int h : vHeights) {
+        if (h <= nHeight && h > nBestHeight) {
+            nBestHeight = h;
+        }
+    }
+    
+    return nBestHeight;
 }
 /** Fluxnode Tier code end **/

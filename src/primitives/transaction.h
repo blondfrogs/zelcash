@@ -46,6 +46,7 @@ static_assert(SAPLING_TX_VERSION <= SAPLING_MAX_TX_VERSION,
 
 static const int32_t FLUXNODE_TX_VERSION = 5;
 static const int32_t FLUXNODE_TX_UPGRADEABLE_VERSION = 6;
+static const int32_t FLUXNODE_TX_QUORUM_BLS_VERSION = 7;  // New version for BLS support
 
 static const int32_t FLUXNODE_INTERNAL_NORMAL_TX_VERSION = 1;
 static const int32_t FLUXNODE_INTERNAL_P2SH_TX_VERSION = 2;
@@ -518,7 +519,8 @@ enum {
     FLUXNODE_NO_TYPE = 1 << 0, // 00000001
     FLUXNODE_START_TX_TYPE = 1 << 1, // 00000010
     FLUXNODE_CONFIRM_TX_TYPE = 1 << 2, // 00000100
-    FLUXNODE_HAS_COLLATERAL= 1 << 3, // 00001000
+    FLUXNODE_HAS_COLLATERAL = 1 << 3, // 00001000
+    FLUX_TX_HAS_BLS = 1 << 6, // 01000000
     FLUXNODE_TX_TYPE_UPGRADED = 1 << 7, // 10000000
 };
 
@@ -605,6 +607,9 @@ public:
     // Fluxnode Tx Version 6 (Includes P2SH nodes ability)
     const int32_t nFluxTxVersion; // Adding this field for further upgradability to fluxnode txes in the future
     const CScript P2SHRedeemScript;
+    
+    // BLS public key for fluxnode consensus (after BLS activation)
+    const std::vector<unsigned char> vchBLSPubKey;
 
 
     /** Construct a CTransaction that qualifies as IsNull() */
@@ -707,6 +712,43 @@ public:
                 UpdateHash();
 
             return;
+        } else if (nVersion == FLUXNODE_TX_QUORUM_BLS_VERSION) { // New Quorum BLS version
+            READWRITE(*const_cast<int8_t*>(&nType)); // Start or Confirm
+            if (nType == FLUXNODE_START_TX_TYPE) {
+                READWRITE(*const_cast<int32_t *>(&nFluxTxVersion));
+                if (nFluxTxVersion == FLUXNODE_INTERNAL_NORMAL_TX_VERSION) {
+                    READWRITE(*const_cast<COutPoint *>(&collateralIn));
+                    READWRITE(*const_cast<CPubKey *>(&collateralPubkey));
+                    READWRITE(*const_cast<CPubKey *>(&pubKey));
+                    READWRITE(*const_cast<uint32_t *>(&sigTime));
+                    if (!(s.GetType() & SER_GETHASH))
+                        READWRITE(*const_cast<std::vector<unsigned char> *>(&sig));
+                } else if (nFluxTxVersion == FLUXNODE_INTERNAL_P2SH_TX_VERSION) {
+                    READWRITE(*const_cast<COutPoint *>(&collateralIn));
+                    READWRITE(*const_cast<CPubKey *>(&pubKey));
+                    READWRITE(*const_cast<CScriptBase *>((CScriptBase *) (&P2SHRedeemScript))); // New Addition to Tx
+                    READWRITE(*const_cast<uint32_t *>(&sigTime));
+                    if (!(s.GetType() & SER_GETHASH))
+                        READWRITE(*const_cast<std::vector<unsigned char> *>(&sig));
+                }
+            } else if (nType == FLUXNODE_CONFIRM_TX_TYPE) {
+                READWRITE(*const_cast<COutPoint *>(&collateralIn));
+                READWRITE(*const_cast<uint32_t *>(&sigTime));
+                READWRITE(*const_cast<int8_t *>(&benchmarkTier));
+                READWRITE(*const_cast<uint32_t *>(&benchmarkSigTime));
+                READWRITE(*const_cast<int8_t *>(&nUpdateType));
+                READWRITE(*const_cast<std::string *>(&ip));
+                READWRITE(*const_cast<std::vector<unsigned char> *>(&vchBLSPubKey)); // BLS public key
+                if (!(s.GetType() & SER_GETHASH)) {
+                    READWRITE(*const_cast<std::vector<unsigned char> *>(&sig));
+                    READWRITE(*const_cast<std::vector<unsigned char> *>(&benchmarkSig));
+                }
+            }
+            
+            if (ser_action.ForRead())
+                UpdateHash();
+                
+            return;
         }
 
         READWRITE(*const_cast<std::vector<CTxIn>*>(&vin));
@@ -739,7 +781,7 @@ public:
     CTransaction(deserialize_type, Stream& s) : CTransaction(CMutableTransaction(deserialize, s)) {}
 
     bool IsFluxnodeTx() const {
-        return nVersion == FLUXNODE_TX_VERSION || nVersion == FLUXNODE_TX_UPGRADEABLE_VERSION;
+        return nVersion == FLUXNODE_TX_VERSION || nVersion == FLUXNODE_TX_UPGRADEABLE_VERSION || nVersion == FLUXNODE_TX_QUORUM_BLS_VERSION;
     }
 
     bool IsFluxnodeUpgradeTx() const {
@@ -752,6 +794,18 @@ public:
 
     bool IsFluxnodeUpgradedP2SHTx() const {
         return IsFluxnodeUpgradeTx() && nFluxTxVersion == FLUXNODE_INTERNAL_P2SH_TX_VERSION;
+    }
+    
+    bool IsFluxnodeQuorumTx() const {
+        return nVersion == FLUXNODE_TX_QUORUM_BLS_VERSION;
+    }
+
+    bool IsFluxnodeConfirmationTx() const {
+        return nType == FLUXNODE_CONFIRM_TX_TYPE;
+    }
+    
+    bool HasBLSPubKey() const {
+        return IsFluxnodeQuorumTx() && nType == FLUXNODE_CONFIRM_TX_TYPE && !vchBLSPubKey.empty();
     }
 
     bool IsNull() const {
@@ -860,6 +914,9 @@ struct CMutableTransaction
     // Fluxnode Tx Version 6 (Includes P2SH nodes ability)
     int32_t nFluxTxVersion; // Adding this field for further upgradability to fluxnode txes in the future
     CScript P2SHRedeemScript;
+    
+    // BLS public key for fluxnode consensus (after BLS activation)
+    std::vector<unsigned char> vchBLSPubKey;
 
 
     CMutableTransaction();
@@ -956,6 +1013,38 @@ struct CMutableTransaction
                 }
             }
             return;
+        } else if (nVersion == FLUXNODE_TX_QUORUM_BLS_VERSION) { // New Quorum BLS version
+            READWRITE(nType); // Start or Confirm
+            if (nType == FLUXNODE_START_TX_TYPE) {
+                READWRITE(nFluxTxVersion);
+                if (nFluxTxVersion == FLUXNODE_INTERNAL_NORMAL_TX_VERSION) {
+                    READWRITE(collateralIn);
+                    READWRITE(collateralPubkey);
+                    READWRITE(pubKey);
+                    READWRITE(sigTime);
+                    if (!(s.GetType() & SER_GETHASH))
+                        READWRITE(sig);
+                } else if (nFluxTxVersion == FLUXNODE_INTERNAL_P2SH_TX_VERSION) {
+                    READWRITE(collateralIn);
+                    READWRITE(pubKey);
+                    READWRITE(*(CScriptBase *) (&P2SHRedeemScript));
+                    READWRITE(sigTime);
+                    if (!(s.GetType() & SER_GETHASH))
+                        READWRITE(sig);
+                }
+            } else if (nType == FLUXNODE_CONFIRM_TX_TYPE) {
+                READWRITE(collateralIn);
+                READWRITE(sigTime);
+                READWRITE(benchmarkTier);
+                READWRITE(benchmarkSigTime);
+                READWRITE(nUpdateType);
+                READWRITE(ip);
+                READWRITE(vchBLSPubKey); // BLS public key
+                if (!(s.GetType() & SER_GETHASH)) {
+                    READWRITE(sig);
+                    READWRITE(benchmarkSig);
+                }
+            }
         }
 
         READWRITE(vin);

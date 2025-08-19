@@ -14,6 +14,8 @@
 #include "consensus/consensus.h"
 #include "consensus/upgrades.h"
 #include "consensus/validation.h"
+#include "consensus/fluxnode_consensus.h"
+#include "consensus/fluxnode_scheduler.h"
 #include "fluxnode/fluxnode.h"
 
 #ifdef ENABLE_MINING
@@ -116,6 +118,10 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const CScript& s
     if(!pblocktemplate.get())
         return NULL;
     CBlock *pblock = &pblocktemplate->block; // pointer for convenience
+    
+    // Check if fluxnode quorum consensus is active
+    bool fFluxNodeQuorumActive = NetworkUpgradeActive(chainActive.Height(), Params().GetConsensus(), Consensus::UPGRADE_FLUXNODE_QUORUM);
+
 
     // -regtest only: allow overriding block.nVersion with
     // -blockversion=N to test forking scenarios
@@ -535,8 +541,23 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const CScript& s
         pblock->hashPrevBlock  = pindexPrev->GetBlockHash();
         pblock->hashFinalSaplingRoot   = sapling_tree.root();
         UpdateTime(pblock, chainparams.GetConsensus(), pindexPrev);
-        pblock->nBits          = GetNextWorkRequired(pindexPrev, pblock, chainparams.GetConsensus());
-        pblock->nSolution.clear();
+        
+        // For fluxnode consensus, don't set POW fields
+        if (fFluxNodeQuorumActive) {
+            pblock->nVersion = 5;  // Fluxnode quorum version
+            pblock->nBits = 0;     // No POW difficulty
+            pblock->nNonce = uint256();  // No nonce needed
+            pblock->nSolution.clear();   // No Equihash solution
+            
+            // Sign the block if we're the designated producer
+            if (!fluxnodeConsensus.SignBlockAsActiveNode(*pblock, nHeight)) {
+                // Not the producer or signing failed - this is ok, we might be generating a template
+                LogPrint("fluxnode", "Not signing block at height %d (not producer or no keys)\n", nHeight);
+            }
+        } else {
+            pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, chainparams.GetConsensus());
+            pblock->nSolution.clear();
+        }
         pblocktemplate->vTxSigOps[0] = GetLegacySigOpCount(pblock->vtx[0]);
 
         CValidationState state;

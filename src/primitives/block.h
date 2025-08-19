@@ -83,6 +83,10 @@ class CBlock : public CBlockHeader
 public:
     // network and disk
     std::vector<CTransaction> vtx;
+    
+    // Fluxnode consensus fields
+    std::vector<unsigned char> vchProducerSig;  // Block producer signature
+    std::vector<unsigned char> vchQuorumCert;   // Serialized quorum certificate
 
     // memory only
     mutable std::vector<uint256> vMerkleTree;
@@ -104,6 +108,11 @@ public:
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(*(CBlockHeader*)this);
         READWRITE(vtx);
+        // Only serialize fluxnode fields if present
+        if (nVersion >= 5 || !vchProducerSig.empty() || !vchQuorumCert.empty()) {
+            READWRITE(vchProducerSig);
+            READWRITE(vchQuorumCert);
+        }
     }
 
     void SetNull()
@@ -111,6 +120,8 @@ public:
         CBlockHeader::SetNull();
         vtx.clear();
         vMerkleTree.clear();
+        vchProducerSig.clear();
+        vchQuorumCert.clear();
     }
 
     CBlockHeader GetBlockHeader() const

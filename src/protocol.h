@@ -160,7 +160,13 @@ enum {
     MSG_BLOCK,
     // Nodes may always request a MSG_FILTERED_BLOCK in a getdata, however,
     // MSG_FILTERED_BLOCK should not appear in any invs except as a part of getdata.
-    MSG_FILTERED_BLOCK
+    MSG_FILTERED_BLOCK,
+    
+    // Fluxnode consensus message types
+    MSG_FLUXNODE_BLOCK_PROPOSAL = 10,
+    MSG_FLUXNODE_BLOCK_SIG = 11,
+    MSG_FLUXNODE_QUORUM_CERT = 12,
+    MSG_FLUXNODE_FINAL_BLOCK = 13
 };
 
 #endif // BITCOIN_PROTOCOL_H

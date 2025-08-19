@@ -15,17 +15,21 @@
 
 static const char* ppszTypeName[] =
 {
-    "ERROR",
-    "tx",
-    "block",
-    "filtered block",
-    "spork",
-    "zn winner",
-    "zn scan error",
-    "zn quorum",
-    "zn announce",
-    "zn ping",
-    "dstx"
+    "ERROR",              // 0
+    "tx",                 // 1 - MSG_TX
+    "block",              // 2 - MSG_BLOCK
+    "filtered block",     // 3 - MSG_FILTERED_BLOCK
+    "spork",              // 4
+    "zn winner",          // 5
+    "zn scan error",      // 6
+    "zn quorum",          // 7
+    "zn announce",        // 8
+    "zn ping",            // 9
+    "mn block proposal",  // 10 - MSG_FLUXNODE_BLOCK_PROPOSAL
+    "mn block sig",       // 11 - MSG_FLUXNODE_BLOCK_SIG
+    "mn quorum cert",     // 12 - MSG_FLUXNODE_QUORUM_CERT
+    "mn final block",     // 13 - MSG_FLUXNODE_FINAL_BLOCK
+    "dstx"                // 14
 };
 
 CMessageHeader::CMessageHeader(const MessageStartChars& pchMessageStartIn)
@@ -139,7 +143,7 @@ bool CInv::IsKnownType() const
 
 bool CInv::IsFluxnodeType() const
 {
-    return (type >= 4);
+    return (type >= 4 && type <= 9) || (type >= 10 && type <= 13);  // Old fluxnode types (4-9) and new fluxnode consensus types (10-13)
 }
 
 const char* CInv::GetCommand() const

@@ -18,28 +18,36 @@ namespace BLS {
 static const std::string DST = "FLUX_BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
 
 bool GenerateKeypair(CBLSSecretKey& secretKey, CBLSPublicKey& publicKey) {
-    // Generate random 32-byte secret key
-    std::vector<unsigned char> ikm(32);
-    GetRandBytes(ikm.data(), 32);
-    
-    // Derive BLS secret key using key generation
-    blst::SecretKey sk;
-    sk.keygen(ikm.data(), ikm.size());
-    
-    // Store secret key (32 bytes)
-    secretKey = CBLSSecretKey();
-    secretKey.vchKey.resize(32);
-    sk.to_bendian(secretKey.vchKey.data());
-    
-    // Generate public key from secret key
-    blst::P1 pk = blst::P1(sk);
-    
-    // Serialize public key (48 bytes compressed)
-    publicKey = CBLSPublicKey();
-    publicKey.vchPubKey.resize(48);
-    pk.serialize(publicKey.vchPubKey.data());
-    
-    return true;
+    try {
+        // Generate random 32-byte secret key
+        std::vector<unsigned char> ikm(32);
+        GetRandBytes(ikm.data(), 32);
+        
+        // Derive BLS secret key using key generation
+        blst::SecretKey sk;
+        sk.keygen(ikm.data(), ikm.size());
+        
+        // Store secret key (32 bytes)
+        secretKey = CBLSSecretKey();
+        secretKey.vchKey.resize(32);
+        sk.to_bendian(secretKey.vchKey.data());
+        
+        // Generate public key from secret key
+        blst::P1 pk = blst::P1(sk);
+        
+        // Serialize public key (48 bytes compressed)
+        publicKey = CBLSPublicKey();
+        publicKey.vchPubKey.resize(48);
+        pk.compress(publicKey.vchPubKey.data());
+        
+        return true;
+    } catch (const std::exception& e) {
+        LogPrintf("BLS::GenerateKeypair: Exception caught: %s\n", e.what());
+        return false;
+    } catch (...) {
+        LogPrintf("BLS::GenerateKeypair: Unknown exception caught\n");
+        return false;
+    }
 }
 
 bool DeriveFromSeed(const std::vector<unsigned char>& seed, CBLSSecretKey& secretKey, CBLSPublicKey& publicKey) {
@@ -47,24 +55,32 @@ bool DeriveFromSeed(const std::vector<unsigned char>& seed, CBLSSecretKey& secre
         return false;
     }
     
-    // Derive BLS secret key from seed
-    blst::SecretKey sk;
-    sk.keygen(seed.data(), seed.size(), std::string("FLUX_BLS_DERIVATION"));
-    
-    // Store secret key (32 bytes)
-    secretKey = CBLSSecretKey();
-    secretKey.vchKey.resize(32);
-    sk.to_bendian(secretKey.vchKey.data());
-    
-    // Generate public key from secret key
-    blst::P1 pk = blst::P1(sk);
-    
-    // Serialize public key (48 bytes compressed)
-    publicKey = CBLSPublicKey();
-    publicKey.vchPubKey.resize(48);
-    pk.serialize(publicKey.vchPubKey.data());
-    
-    return true;
+    try {
+        // Derive BLS secret key from seed
+        blst::SecretKey sk;
+        sk.keygen(seed.data(), seed.size(), std::string("FLUX_BLS_DERIVATION"));
+        
+        // Store secret key (32 bytes)
+        secretKey = CBLSSecretKey();
+        secretKey.vchKey.resize(32);
+        sk.to_bendian(secretKey.vchKey.data());
+        
+        // Generate public key from secret key
+        blst::P1 pk = blst::P1(sk);
+        
+        // Serialize public key (48 bytes compressed)
+        publicKey = CBLSPublicKey();
+        publicKey.vchPubKey.resize(48);
+        pk.compress(publicKey.vchPubKey.data());
+        
+        return true;
+    } catch (const std::exception& e) {
+        LogPrintf("BLS::DeriveFromSeed: Exception caught: %s\n", e.what());
+        return false;
+    } catch (...) {
+        LogPrintf("BLS::DeriveFromSeed: Unknown exception caught\n");
+        return false;
+    }
 }
 
 bool Sign(const uint256& message, const CBLSSecretKey& secretKey, CBLSSignature& signature) {
@@ -81,11 +97,11 @@ bool Sign(const uint256& message, const CBLSSecretKey& secretKey, CBLSSignature&
     sig.hash_to(message.begin(), 32, DST);
     sig.sign_with(sk);
     
-    // Convert to affine and serialize
+    // Convert to affine and compress
     blst::P2_Affine sig_affine(sig);
     signature = CBLSSignature();
     signature.vchSig.resize(96);
-    sig_affine.serialize(signature.vchSig.data());
+    sig_affine.compress(signature.vchSig.data());
     
     return true;
 }
@@ -138,7 +154,7 @@ bool Aggregate(const std::vector<CBLSSignature>& signatures, CBLSAggregateSignat
         blst::P2_Affine agg_affine(agg_sig);
         aggregateSig = CBLSAggregateSignature();
         aggregateSig.vchAggSig.resize(96);
-        agg_affine.serialize(aggregateSig.vchAggSig.data());
+        agg_affine.compress(aggregateSig.vchAggSig.data());
         
         return true;
     } catch (...) {

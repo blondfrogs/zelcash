@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php.
 
+#include "../config/bitcoin-config.h"
 #include "test/test_bitcoin.h"
 #include "../consensus/bls.h"
 #include "../consensus/bls_key_manager.h"
@@ -42,29 +43,25 @@ BOOST_AUTO_TEST_CASE(bls_basic_operations)
     BOOST_CHECK(!BLS::Verify(wrongMsg, publicKey, signature));
 }
 
-// Test deterministic key derivation from ECDSA
+// Test deterministic key derivation from seed
 BOOST_AUTO_TEST_CASE(bls_key_derivation_deterministic)
 {
-    // Generate ECDSA key
-    CKey ecdsaKey;
-    ecdsaKey.MakeNewKey(true);
+    // Create a deterministic seed
+    std::vector<unsigned char> seed(32);
+    for (size_t i = 0; i < 32; i++) {
+        seed[i] = i;
+    }
     
     // Derive BLS key multiple times - should be deterministic
-    CBLSKeyManager manager1;
-    CBLSKeyManager manager2;
-    
-    BOOST_CHECK(manager1.InitializeFromECDSA(ecdsaKey));
-    BOOST_CHECK(manager2.InitializeFromECDSA(ecdsaKey));
-    
     CBLSSecretKey secret1, secret2;
     CBLSPublicKey public1, public2;
     
-    BOOST_CHECK(manager1.GetActiveKeys(secret1, public1));
-    BOOST_CHECK(manager2.GetActiveKeys(secret2, public2));
+    BOOST_CHECK(BLS::DeriveFromSeed(seed, secret1, public1));
+    BOOST_CHECK(BLS::DeriveFromSeed(seed, secret2, public2));
     
     // Keys should be identical
     BOOST_CHECK(secret1.vchKey == secret2.vchKey);
-    BOOST_CHECK(public1 == public2);
+    BOOST_CHECK(public1.vchPubKey == public2.vchPubKey);
 }
 
 // Test signature aggregation for quorum
@@ -117,32 +114,34 @@ BOOST_AUTO_TEST_CASE(bls_signature_aggregation)
     BOOST_CHECK(BLS::VerifyAggregate(msgHash, publicKeys, partialAgg));
 }
 
-// Test BLS key manager integration
-BOOST_AUTO_TEST_CASE(bls_key_manager_operations)
+// Test multiple BLS signatures
+BOOST_AUTO_TEST_CASE(bls_multiple_signatures)
 {
-    CBLSKeyManager manager;
+    // Generate multiple keypairs
+    const int NUM_KEYS = 5;
+    std::vector<CBLSSecretKey> secrets;
+    std::vector<CBLSPublicKey> pubkeys;
     
-    // Initialize with ECDSA key
-    CKey ecdsaKey;
-    ecdsaKey.MakeNewKey(true);
+    for (int i = 0; i < NUM_KEYS; i++) {
+        CBLSSecretKey secret;
+        CBLSPublicKey pubkey;
+        BOOST_CHECK(BLS::GenerateKeypair(secret, pubkey));
+        secrets.push_back(secret);
+        pubkeys.push_back(pubkey);
+    }
     
-    BOOST_CHECK(manager.InitializeFromECDSA(ecdsaKey));
-    BOOST_CHECK(manager.HasActiveKey());
-    
-    // Sign a message
+    // Sign same message with all keys
     uint256 msgHash = GetRandHash();
-    CBLSSignature signature;
+    std::vector<CBLSSignature> signatures;
     
-    BOOST_CHECK(manager.SignMessage(msgHash, signature));
-    BOOST_CHECK(signature.IsValid());
-    
-    // Get public key and verify
-    CBLSSecretKey secret;
-    CBLSPublicKey pubkey;
-    BOOST_CHECK(manager.GetActiveKeys(secret, pubkey));
-    
-    // Verify signature
-    BOOST_CHECK(BLS::Verify(msgHash, pubkey, signature));
+    for (int i = 0; i < NUM_KEYS; i++) {
+        CBLSSignature sig;
+        BOOST_CHECK(BLS::Sign(msgHash, secrets[i], sig));
+        signatures.push_back(sig);
+        
+        // Verify each signature individually
+        BOOST_CHECK(BLS::Verify(msgHash, pubkeys[i], signatures[i]));
+    }
 }
 
 // Performance benchmark for BLS vs ECDSA
@@ -245,35 +244,27 @@ BOOST_AUTO_TEST_CASE(bls_fluxnode_consensus_simulation)
     const int QUORUM_SIZE = 21;
     const int THRESHOLD = 14;
     
-    // Simulate fluxnode keys
-    std::vector<CKey> ecdsaKeys;
-    std::vector<CBLSKeyManager*> managers;
+    // Simulate fluxnode BLS keys directly
+    std::vector<CBLSSecretKey> secretKeys;
+    std::vector<CBLSPublicKey> publicKeys;
     
     for (int i = 0; i < QUORUM_SIZE; i++) {
-        CKey key;
-        key.MakeNewKey(true);
-        ecdsaKeys.push_back(key);
-        
-        CBLSKeyManager* manager = new CBLSKeyManager();
-        BOOST_CHECK(manager->InitializeFromECDSA(key));
-        managers.push_back(manager);
+        CBLSSecretKey secret;
+        CBLSPublicKey pubkey;
+        BOOST_CHECK(BLS::GenerateKeypair(secret, pubkey));
+        secretKeys.push_back(secret);
+        publicKeys.push_back(pubkey);
     }
     
     // Simulate block signing
     uint256 blockHash = GetRandHash();
     std::vector<CBLSSignature> signatures;
-    std::vector<CBLSPublicKey> publicKeys;
     
     // First THRESHOLD nodes sign
     for (int i = 0; i < THRESHOLD; i++) {
         CBLSSignature sig;
-        BOOST_CHECK(managers[i]->SignMessage(blockHash, sig));
+        BOOST_CHECK(BLS::Sign(blockHash, secretKeys[i], sig));
         signatures.push_back(sig);
-        
-        CBLSSecretKey secret;
-        CBLSPublicKey pubkey;
-        BOOST_CHECK(managers[i]->GetActiveKeys(secret, pubkey));
-        publicKeys.push_back(pubkey);
     }
     
     // Aggregate the signatures
@@ -294,11 +285,53 @@ BOOST_AUTO_TEST_CASE(bls_fluxnode_consensus_simulation)
     LogPrintf("BLS aggregate: %d bytes\n", aggSig.vchAggSig.size() + 4);
     LogPrintf("Space saved: %.1f%%\n", 
              100.0 * (1.0 - (double)(aggSig.vchAggSig.size() + 4) / (THRESHOLD * 120)));
+}
+
+// Test BLS key manager operations
+BOOST_AUTO_TEST_CASE(bls_key_manager_test)
+{
+    // Create a local instance (not using global)
+    CBLSKeyManager manager;
     
-    // Cleanup
-    for (auto* manager : managers) {
-        delete manager;
-    }
+    // Generate ECDSA key
+    CKey ecdsaKey;
+    ecdsaKey.MakeNewKey(true);
+    
+    // Initialize manager with ECDSA key
+    BOOST_CHECK(manager.InitializeFromECDSA(ecdsaKey));
+    BOOST_CHECK(manager.HasActiveKey());
+    
+    // Get active keys
+    CBLSSecretKey secret;
+    CBLSPublicKey pubkey;
+    BOOST_CHECK(manager.GetActiveKeys(secret, pubkey));
+    BOOST_CHECK(secret.IsValid());
+    BOOST_CHECK(pubkey.IsValid());
+    
+    // Sign a message
+    uint256 msgHash = GetRandHash();
+    CBLSSignature signature;
+    BOOST_CHECK(manager.SignMessage(msgHash, signature));
+    BOOST_CHECK(signature.IsValid());
+    
+    // Verify signature
+    BOOST_CHECK(BLS::Verify(msgHash, pubkey, signature));
+    
+    // Test deterministic derivation - same ECDSA key should give same BLS key
+    CBLSKeyManager manager2;
+    BOOST_CHECK(manager2.InitializeFromECDSA(ecdsaKey));
+    
+    CBLSSecretKey secret2;
+    CBLSPublicKey pubkey2;
+    BOOST_CHECK(manager2.GetActiveKeys(secret2, pubkey2));
+    
+    // Keys should be identical
+    BOOST_CHECK(secret.vchKey == secret2.vchKey);
+    BOOST_CHECK(pubkey.vchPubKey == pubkey2.vchPubKey);
+    
+    // Clear and verify no active key
+    manager.Clear();
+    BOOST_CHECK(!manager.HasActiveKey());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

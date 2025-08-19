@@ -10,9 +10,16 @@
 #define ZELCASH_FLUXNODECACHEDB_H
 
 #include "dbwrapper.h"
+#include "uint256.h"
+#include "serialize.h"
+#include "utiltime.h"
 #include <boost/filesystem/path.hpp>
+#include <map>
+#include <vector>
+#include <algorithm>
 
 class FluxnodeCacheData;
+class FluxnodeSnapshot;
 class COutPoint;
 class CFluxnodeTxBlockUndo;
 
@@ -37,6 +44,13 @@ public:
     bool ReadBlockUndoFluxnodeData(const uint256 &p_blockHash, CFluxnodeTxBlockUndo& p_undoData);
 
     bool CleanupOldFluxnodeData();
+    
+    // Snapshot functions for deterministic consensus
+    bool WriteFluxnodeSnapshot(const FluxnodeSnapshot& snapshot);
+    bool ReadFluxnodeSnapshot(int nHeight, FluxnodeSnapshot& snapshot);
+    bool EraseFluxnodeSnapshot(int nHeight);
+    std::vector<int> GetSnapshotHeights();
+    bool CleanupOldSnapshots(int nCurrentHeight);
 
 };
 

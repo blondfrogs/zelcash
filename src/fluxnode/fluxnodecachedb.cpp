@@ -14,6 +14,8 @@
 
 static const char DB_FLUXNODE_CACHE_DATA = 'd';
 static const char BLOCK_FLUXNODE_UNDO_DATA = 'u';
+static const char DB_FLUXNODE_SNAPSHOT = 's';
+static const char DB_FLUXNODE_SNAPSHOT_INDEX = 'i';
 
 // EST 720 blocks * 7 Days
 static const int ONE_WEEK_OF_BLOCK_COUNT = 5040;
@@ -131,5 +133,81 @@ bool CDeterministicFluxnodeDB::CleanupOldFluxnodeData()
         CompactDatabase();
     }
 
+    return true;
+}
+
+// Snapshot functions for deterministic consensus
+bool CDeterministicFluxnodeDB::WriteFluxnodeSnapshot(const FluxnodeSnapshot& snapshot)
+{
+    LogPrint("dfluxnode", "Writing fluxnode snapshot at height %d\n", snapshot.nHeight);
+    
+    // Write the snapshot
+    if (!Write(std::make_pair(DB_FLUXNODE_SNAPSHOT, snapshot.nHeight), snapshot)) {
+        return false;
+    }
+    
+    // Update the index of snapshot heights
+    std::vector<int> vHeights = GetSnapshotHeights();
+    if (std::find(vHeights.begin(), vHeights.end(), snapshot.nHeight) == vHeights.end()) {
+        vHeights.push_back(snapshot.nHeight);
+        std::sort(vHeights.begin(), vHeights.end());
+        Write(DB_FLUXNODE_SNAPSHOT_INDEX, vHeights);
+    }
+    
+    return true;
+}
+
+bool CDeterministicFluxnodeDB::ReadFluxnodeSnapshot(int nHeight, FluxnodeSnapshot& snapshot)
+{
+    return Read(std::make_pair(DB_FLUXNODE_SNAPSHOT, nHeight), snapshot);
+}
+
+bool CDeterministicFluxnodeDB::EraseFluxnodeSnapshot(int nHeight)
+{
+    LogPrint("dfluxnode", "Erasing fluxnode snapshot at height %d\n", nHeight);
+    
+    // Erase the snapshot
+    if (!Erase(std::make_pair(DB_FLUXNODE_SNAPSHOT, nHeight))) {
+        return false;
+    }
+    
+    // Update the index
+    std::vector<int> vHeights = GetSnapshotHeights();
+    vHeights.erase(std::remove(vHeights.begin(), vHeights.end(), nHeight), vHeights.end());
+    Write(DB_FLUXNODE_SNAPSHOT_INDEX, vHeights);
+    
+    return true;
+}
+
+std::vector<int> CDeterministicFluxnodeDB::GetSnapshotHeights()
+{
+    std::vector<int> vHeights;
+    if (!Read(DB_FLUXNODE_SNAPSHOT_INDEX, vHeights)) {
+        // Return empty vector if no index exists yet
+        return std::vector<int>();
+    }
+    return vHeights;
+}
+
+bool CDeterministicFluxnodeDB::CleanupOldSnapshots(int nCurrentHeight)
+{
+    std::vector<int> vHeights = GetSnapshotHeights();
+    
+    if (vHeights.size() <= FLUXNODE_MAX_SNAPSHOTS) {
+        return true; // Nothing to clean up
+    }
+    
+    // Sort heights in descending order
+    std::sort(vHeights.rbegin(), vHeights.rend());
+    
+    // Keep only the most recent FLUXNODE_MAX_SNAPSHOTS
+    int nRemoved = 0;
+    for (size_t i = FLUXNODE_MAX_SNAPSHOTS; i < vHeights.size(); i++) {
+        if (EraseFluxnodeSnapshot(vHeights[i])) {
+            nRemoved++;
+        }
+    }
+    
+    LogPrint("dfluxnode", "Cleaned up %d old snapshots\n", nRemoved);
     return true;
 }

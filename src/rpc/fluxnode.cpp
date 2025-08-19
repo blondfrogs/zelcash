@@ -174,12 +174,14 @@ UniValue rebuildfluxnodedb(const UniValue& params, bool fHelp, string cmdname) {
                             fluxnodeCache.AddNewConfirm(tx, rescanIndex->nHeight);
                             int64_t nLoop4 = GetTimeMicros(); nAddNewConfirm += nLoop4 - nLoop2;
                         } else if (tx.nUpdateType == FluxnodeUpdateType::UPDATE_CONFIRM) {
-                            fluxnodeCache.AddUpdateConfirm(tx, rescanIndex->nHeight);
                             FluxnodeCacheData global_data = g_fluxnodeCache.GetFluxnodeData(tx.collateralIn);
                             if (global_data.IsNull()) {
                                 return error("Failed to find global data on update confirm tx, %s",
                                              tx.GetHash().GetHex());
                             }
+
+                            fluxnodeCache.AddUpdateConfirm(tx, rescanIndex->nHeight);
+
                             fluxnodeTxBlockUndo.mapUpdateLastConfirmHeight.insert(
                                     std::make_pair(tx.collateralIn,
                                                    global_data.nLastConfirmedBlockHeight));
@@ -362,7 +364,9 @@ UniValue createconfirmationtransaction(const UniValue& params, bool fHelp)
     std::string errorMessage;
     CMutableTransaction mutTx;
 
-    activeFluxnode.BuildDeterministicConfirmTx(mutTx, FluxnodeUpdateType::UPDATE_CONFIRM);
+    if (!activeFluxnode.BuildDeterministicConfirmTx(mutTx, errorMessage, FluxnodeUpdateType::UPDATE_CONFIRM)) {
+        throw JSONRPCError(RPC_VERIFY_ERROR, strprintf("Failed to build confirmation transaction: %s\n", errorMessage));
+    }
 
     if (!activeFluxnode.SignDeterministicConfirmTx(mutTx, errorMessage)) {
         throw JSONRPCError(RPC_VERIFY_ERROR, strprintf("Failed to sign new confirmation transaction: %s\n", errorMessage));

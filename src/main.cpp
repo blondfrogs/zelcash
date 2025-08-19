@@ -16,6 +16,10 @@
 #include "checkqueue.h"
 #include "consensus/upgrades.h"
 #include "consensus/validation.h"
+#include "consensus/fluxnode_consensus.h"
+#include "consensus/fluxnode_validation.h"
+#include "consensus/fluxnode_messages.h"
+#include "consensus/fluxnode_scheduler.h"
 #include "deprecation.h"
 #include "init.h"
 #include "merkleblock.h"
@@ -58,6 +62,7 @@ using namespace std;
 
 #include "librustzcash.h"
 #include "key_io.h"
+#include "consensus/bls.h"
 
 /**
  * Global state
@@ -933,6 +938,8 @@ bool ContextualCheckTransaction(
     bool kamataActive = NetworkUpgradeActive(nHeight, chainparams.GetConsensus(), Consensus::UPGRADE_KAMATA);
     bool fluxRebrandActive = NetworkUpgradeActive(nHeight, chainparams.GetConsensus(), Consensus::UPGRADE_FLUX);
     bool fluxP2SHNodesActive = NetworkUpgradeActive(nHeight, chainparams.GetConsensus(), Consensus::UPGRADE_P2SHNODES);
+    bool fluxNodeQuorumActive = NetworkUpgradeActive(nHeight, chainparams.GetConsensus(), Consensus::UPGRADE_FLUXNODE_QUORUM);
+    bool fluxNodeBLSActive = NetworkUpgradeActive(nHeight, chainparams.GetConsensus(), Consensus::UPGRADE_FLUXNODE_BLS);
 
     if (tx.IsCoinBase()) {
         // Check for exchange address funding
@@ -1007,6 +1014,25 @@ bool ContextualCheckTransaction(
             if (!fluxP2SHNodesActive) {
                 return state.DoSTx(dosLevel, error("ContextualCheckTransaction(): P2SHNodes tx seen before active"),
                                  REJECT_INVALID, "tx-p2shnodes-not-active", false, tx);
+            }
+        }
+
+        if (tx.IsFluxnodeQuorumTx()) {
+            if (!fluxNodeQuorumActive) {
+                return state.DoSTx(dosLevel, error("ContextualCheckTransaction(): Quorum tx seen before active"),
+                                   REJECT_INVALID, "tx-quorum-not-active", false, tx);
+            }
+        }
+
+        // If BLS is active. We enforce BLS on initial confirm confirmation transactions.
+        if (fluxNodeBLSActive) {
+            if (tx.IsFluxnodeConfirmationTx()) {
+                if (tx.nUpdateType == FluxnodeUpdateType::INITIAL_CONFIRM) {
+                    if (tx.vchBLSPubKey.empty()) {
+                        return state.DoSTx(dosLevel, error("ContextualCheckTransaction(): BLSKey not provided when BLS Fork Active"),
+                                           REJECT_INVALID, "tx-bls-not-provided-fork-active", false, tx);
+                    }
+                }
             }
         }
     }
@@ -1323,6 +1349,12 @@ bool ContextualCheckTransaction(
                     strFailMessage = "fluxnode-tx-benchmark-tier-to-low-for-collateral";
                 }
 
+                // Block update txs that have a bls public key when one is already set. Saves 48 Bytes per confirmation tx.
+                if (!fFailure && tx.HasBLSPubKey() && !g_fluxnodeCache.GetFluxnodeData(tx.collateralIn).vchBLSPubKey.empty()) {
+                    fFailure = true;
+                    strFailMessage = "fluxnode-tx-has-bls-key-when-already-set";
+                }
+
                 if (fFailure && !fFromAccept) {
                     return state.DoSTx(dosLevel, error(strFailMessage.c_str()), REJECT_INVALID, strFailMessage, false, tx);
                 }
@@ -1425,9 +1457,6 @@ bool CheckTransactionWithoutProofVerification(const CTransaction& tx, CValidatio
     }
 
     if (tx.IsFluxnodeTx()) {
-        if (tx.nVersion == FLUXNODE_TX_UPGRADEABLE_VERSION) {
-            LogPrintf("Found a upgraded TX --------------------------------\n");
-        }
         // Check type of fluxnode tx
         if (tx.nType != FLUXNODE_START_TX_TYPE && tx.nType != FLUXNODE_CONFIRM_TX_TYPE)
             return state.DoS(10, error("CheckTransaction(): Is Fluxnode Tx, bad type"),
@@ -1480,6 +1509,15 @@ bool CheckTransactionWithoutProofVerification(const CTransaction& tx, CValidatio
             if (tx.nUpdateType != FluxnodeUpdateType::INITIAL_CONFIRM && tx.nUpdateType != FluxnodeUpdateType::UPDATE_CONFIRM) {
                 return state.DoS(10, error("CheckTransaction(): Is Fluxnode Tx, invalid update type"),
                                  REJECT_INVALID, "bad-txns-fluxnode-tx-invalid-update-type");
+            }
+            
+            // Check BLS public key validity if present (version 7 transactions)
+            if (tx.IsFluxnodeQuorumTx() && !tx.vchBLSPubKey.empty()) {
+                CBLSPublicKey blsPubKey(tx.vchBLSPubKey);
+                if (!blsPubKey.IsValid()) {
+                    return state.DoS(100, error("CheckTransaction(): Is Fluxnode Tx, invalid BLS public key"),
+                                     REJECT_INVALID, "bad-txns-fluxnode-tx-invalid-bls-pubkey");
+                }
             }
         }
     }
@@ -3209,6 +3247,17 @@ static DisconnectResult DisconnectBlock(const CBlock& block, CValidationState& s
             return DISCONNECT_FAILED;
         }
     }
+    
+    // Remove fluxnode snapshot if this was a snapshot height
+    if (p_fluxnodeCache) {
+        if (pindex->nHeight % FLUXNODE_SNAPSHOT_INTERVAL == 0) {
+            // Remove the snapshot for this height when disconnecting the block
+            if (pFluxnodeDB && pFluxnodeDB->EraseFluxnodeSnapshot(pindex->nHeight)) {
+                LogPrint("fluxnode", "Removed fluxnode snapshot at height %d (block disconnect)\n", pindex->nHeight);
+            }
+        }
+    }
+    
     return fClean ? DISCONNECT_OK : DISCONNECT_UNCLEAN;
 }
 
@@ -3497,13 +3546,22 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                         }
                     } else if (tx.nUpdateType == FluxnodeUpdateType::UPDATE_CONFIRM) {
                         if (p_fluxnodeCache) {
-                            p_fluxnodeCache->AddUpdateConfirm(tx, pindex->nHeight);
                             FluxnodeCacheData global_data = g_fluxnodeCache.GetFluxnodeData(tx.collateralIn);
                             if (global_data.IsNull()) {
                                 return state.DoSTx(100,
                                                  error("ConnectBlock(): fluxnode tx, failed finding data to creating undo data"),
                                                  REJECT_INVALID, "bad-txns-fluxnode-global-data-not-found", false, tx);
                             }
+                            
+                            // After BLS activation, verify BLS key is only set once.
+                            // This should save 48 bytes per confirmation transaction.
+                            if (tx.HasBLSPubKey() && !global_data.vchBLSPubKey.empty()) {
+                                return state.DoSTx(100,
+                                                   error("ConnectBlock(): fluxnode UPDATE_CONFIRM has already set BLS Public Key"),
+                                                   REJECT_INVALID, "bad-txns-bls-key-already-set", false, tx);
+                            }
+                            
+                            p_fluxnodeCache->AddUpdateConfirm(tx, pindex->nHeight);
 
                             // Add the lastConfirmed and lastIpAddress into the undoblock data
                             fluxnodeTxBlockUndo.mapUpdateLastConfirmHeight[tx.collateralIn] =  global_data.nLastConfirmedBlockHeight;
@@ -3764,6 +3822,18 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
     int64_t nTime4 = GetTimeMicros(); nTimeCallbacks += nTime4 - nTime3;
     LogPrint("bench", "    - Callbacks: %.2fms [%.2fs]\n", 0.001 * (nTime4 - nTime3), nTimeCallbacks * 0.000001);
+
+    // Create fluxnode snapshot for deterministic consensus
+    if (p_fluxnodeCache) {
+        if (pindex->nHeight % FLUXNODE_SNAPSHOT_INTERVAL == 0) {
+            if (!p_fluxnodeCache->CreateSnapshot(pindex->nHeight, pindex->GetBlockHash())) {
+                LogPrintf("Warning: Failed to create fluxnode snapshot at height %d\n", pindex->nHeight);
+                // Don't fail block processing if snapshot creation fails
+            } else {
+                LogPrint("fluxnode", "Created fluxnode snapshot at height %d\n", pindex->nHeight);
+            }
+        }
+    }
 
     return true;
 }
@@ -4693,6 +4763,13 @@ bool CheckBlockHeader(
         return state.DoS(100, error("CheckBlockHeader(): block version too low"),
                          REJECT_INVALID, "version-too-low");
 
+    unsigned int nHeight = chainActive.Height();
+    
+    // For fluxnode consensus blocks, skip POW checks
+    if (IsFluxnodeQuorumConsensusEnabled(nHeight)) {
+        return CheckFluxnodeBlockHeader(block, state, chainparams, nHeight);
+    }
+
     // Check Equihash solution is valid
     if (fCheckPOW && !CheckEquihashSolution(&block, chainparams.GetConsensus()))
         return state.DoS(100, error("CheckBlockHeader(): Equihash solution invalid"),
@@ -4704,7 +4781,6 @@ bool CheckBlockHeader(
                          REJECT_INVALID, "high-hash");
 
     // Check timestamp
-    unsigned int nHeight = chainActive.Height();
     const CChainParams& chainParams = Params();
     const Consensus::Params& consensusParams = chainParams.GetConsensus();
     unsigned int newAlgoHeight = consensusParams.vUpgrades[Consensus::UPGRADE_LWMA].nActivationHeight;
@@ -4821,6 +4897,11 @@ bool ContextualCheckBlockHeader(
     assert(pindexPrev);
 
     const int nHeight = pindexPrev->nHeight + 1;
+    
+    // Check fluxnode consensus if enabled
+    if (IsFluxnodeQuorumConsensusEnabled(nHeight)) {
+        return CheckFluxnodeBlockHeader(block, state, chainParams, nHeight);
+    }
 
     //If this is a reorg, check that it is not too deep
     bool fGreaterThanMaxReorg = (chainActive.Height() - (nHeight - 1)) >= GetMaxReorgDepth(chainActive.Height());
@@ -4851,15 +4932,24 @@ bool ContextualCheckBlockHeader(
            REJECT_INVALID,"bad-equihash-solution-size");
     }
 
-    // Check proof of work
-    if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
-        return state.DoS(100, error("%s: incorrect proof of work", __func__),
-                         REJECT_INVALID, "bad-diffbits");
+    // Check proof of work (skip for fluxnode consensus)
+    if (!IsFluxnodeQuorumConsensusEnabled(nHeight)) {
+        if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
+            return state.DoS(100, error("%s: incorrect proof of work", __func__),
+                             REJECT_INVALID, "bad-diffbits");
+    }
 
     // Check timestamp against prev
-    if (block.GetBlockTime() <= pindexPrev->GetMedianTimePast())
-        return state.Invalid(error("%s: block's timestamp is too early", __func__),
-                             REJECT_INVALID, "time-too-old");
+    if (!IsFluxnodeQuorumConsensusEnabled(nHeight))
+    {
+        if (block.GetBlockTime() <= pindexPrev->GetMedianTimePast())
+            return state.Invalid(error("%s: block's timestamp is too early", __func__),
+                                 REJECT_INVALID, "time-too-old");
+    } else {
+        if (block.GetBlockTime() <= pindexPrev->GetBlockTime())
+            return state.Invalid(error("%s: block timestamp must be greater than previous block", __func__),
+                                 REJECT_INVALID, "bad-block-time-backwards");
+    }
 
     if (fCheckpointsEnabled)
     {
@@ -4889,6 +4979,13 @@ bool ContextualCheckBlock(
 {
     const int nHeight = pindexPrev == NULL ? 0 : pindexPrev->nHeight + 1;
     const Consensus::Params& consensusParams = chainparams.GetConsensus();
+    
+    // Additional checks for fluxnode consensus blocks
+    if (IsFluxnodeQuorumConsensusEnabled(nHeight)) {
+        if (!ContextualCheckFluxnodeBlock(block, state, chainparams, pindexPrev)) {
+            return false;
+        }
+    }
 
     // Check that all transactions are finalized
     BOOST_FOREACH(const CTransaction& tx, block.vtx) {

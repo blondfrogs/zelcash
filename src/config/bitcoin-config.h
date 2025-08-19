@@ -41,6 +41,9 @@
 /* parameter and return value type for __fdelt_chk */
 /* #undef FDELT_TYPE */
 
+/* Define if BLST library is available */
+#define HAVE_BLST 1
+
 /* define if the Boost library is available */
 #define HAVE_BOOST /**/
 

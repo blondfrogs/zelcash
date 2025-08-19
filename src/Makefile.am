@@ -135,6 +135,12 @@ BITCOIN_CORE_H = \
   consensus/params.h \
   consensus/upgrades.h \
   consensus/validation.h \
+  consensus/bls.h \
+  consensus/bls_key_manager.h \
+  consensus/fluxnode_consensus.h \
+  consensus/fluxnode_messages.h \
+  consensus/fluxnode_scheduler.h \
+  consensus/fluxnode_validation.h \
   core_io.h \
   core_memusage.h \
   deprecation.h \
@@ -377,6 +383,12 @@ libbitcoin_common_a_SOURCES = \
   coins.cpp \
   compressor.cpp \
   consensus/upgrades.cpp \
+  consensus/bls.cpp \
+  consensus/bls_key_manager.cpp \
+  consensus/fluxnode_consensus.cpp \
+  consensus/fluxnode_messages.cpp \
+  consensus/fluxnode_scheduler.cpp \
+  consensus/fluxnode_validation.cpp \
   core_read.cpp \
   core_write.cpp \
   hash.cpp \
@@ -452,6 +464,7 @@ fluxd_LDADD = \
   $(LIBBITCOIN_SERVER) \
   $(LIBBITCOIN_WALLET) \
   $(LIBBITCOIN_COMMON) \
+  $(BLST_LIBS) \
   $(LIBUNIVALUE) \
   $(LIBBITCOIN_UTIL) \
   $(LIBBITCOIN_ZMQ) \

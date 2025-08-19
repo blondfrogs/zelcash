@@ -751,6 +751,20 @@ AX_CHECK_COMPILE_FLAG([-Wno-builtin-declaration-mismatch],[CXXFLAGS="$CXXFLAGS -
 
 LIBFLUX_LIBS="$BOOST_SYSTEM_LIB -lcrypto -lsodium $RUST_LIBS"
 
+# Check for BLST library
+AC_CHECK_HEADER([blst/blst.h],
+  [AC_CHECK_LIB([blst], [blst_p1_affine_is_inf],
+    [BLST_LIBS="-lblst"
+     AC_DEFINE([HAVE_BLST], [1], [Define if BLST library is available])
+     have_blst=yes],
+    [AC_MSG_WARN([BLST library not found. BLS signatures will not be available.])
+     have_blst=no]
+  )],
+  [AC_MSG_WARN([BLST header not found. BLS signatures will not be available.])
+   have_blst=no]
+)
+AM_CONDITIONAL([HAVE_BLST], [test x$have_blst = xyes])
+
 AC_MSG_CHECKING([whether to build bitcoind])
 AM_CONDITIONAL([BUILD_BITCOIND], [test x$build_fluxd = xyes])
 AC_MSG_RESULT($build_fluxd)
@@ -881,6 +895,7 @@ AC_SUBST(EVENT_PTHREADS_LIBS)
 AC_SUBST(ZMQ_LIBS)
 AC_SUBST(LIBFLUX_LIBS)
 AC_SUBST(PROTON_LIBS)
+AC_SUBST(BLST_LIBS)
 AC_CONFIG_FILES([Makefile src/Makefile doc/man/Makefile src/test/buildenv.py])
 AC_CONFIG_FILES([qa/pull-tester/run-bitcoind-for-test.sh],[chmod +x qa/pull-tester/run-bitcoind-for-test.sh])
 AC_CONFIG_FILES([qa/pull-tester/tests-config.sh],[chmod +x qa/pull-tester/tests-config.sh])

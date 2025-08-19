@@ -4,6 +4,8 @@
 
 #include "fluxnode_consensus.h"
 #include "fluxnode_messages.h"
+#include "bls.h"
+#include "bls_key_manager.h"
 #include "../hash.h"
 #include "../main.h"
 #include "../chainparams.h"
@@ -66,6 +68,26 @@ bool CFluxnodeBlockSignature::Verify(const uint256& blockHash, const CPubKey& pu
     return pubKey.Verify(blockHash, vchSig);
 }
 
+bool CFluxnodeBlockSignature::SignBLS(const uint256& blockHash, const CBLSSecretKey& blsKey) {
+    CBLSSignature blsSig;
+    if (!BLS::Sign(blockHash, blsKey, blsSig)) {
+        return false;
+    }
+    vchSig = blsSig.vchSig;
+    sigTime = GetAdjustedTime();
+    nSigType = SIG_TYPE_BLS;
+    return true;
+}
+
+bool CFluxnodeBlockSignature::VerifyBLS(const uint256& blockHash, const CBLSPublicKey& blsPubKey) const {
+    if (nSigType != SIG_TYPE_BLS) {
+        return false;
+    }
+    CBLSSignature blsSig;
+    blsSig.vchSig = vchSig;
+    return BLS::Verify(blockHash, blsPubKey, blsSig);
+}
+
 // CQuorumCertificate implementation
 int CQuorumCertificate::GetTierWeightedScore() const {
     int score = 0;
@@ -105,6 +127,52 @@ bool CQuorumCertificate::HasQuorum() const {
         // Also check tier-weighted score
         return GetTierWeightedScore() >= GetQuorumWeightThreshold();
     }
+}
+
+bool CQuorumCertificate::CreateBLSAggregate(const std::vector<CFluxnodeBlockSignature>& blsSigs) {
+    if (blsSigs.size() < FLUXNODE_CONSENSUS_THRESHOLD) {
+        LogPrintf("CreateBLSAggregate: Not enough signatures (%d < %d)\n", 
+                  blsSigs.size(), FLUXNODE_CONSENSUS_THRESHOLD);
+        return false;
+    }
+    
+    // Collect BLS signatures and track signers
+    std::vector<CBLSSignature> signatures;
+    signerOutpoints.clear();
+    nSignersBitmap = 0;
+    
+    for (size_t i = 0; i < blsSigs.size() && i < 32; i++) { // Max 32 signers for bitmap
+        const auto& sig = blsSigs[i];
+        if (sig.nSigType != SIG_TYPE_BLS) {
+            LogPrintf("CreateBLSAggregate: Non-BLS signature at index %d\n", i);
+            continue;
+        }
+        
+        CBLSSignature blsSig;
+        blsSig.vchSig = sig.vchSig;
+        signatures.push_back(blsSig);
+        signerOutpoints.push_back(sig.fluxnodeOutpoint);
+        nSignersBitmap |= (1 << i);
+    }
+    
+    if (signatures.size() < FLUXNODE_CONSENSUS_THRESHOLD) {
+        LogPrintf("CreateBLSAggregate: Not enough valid BLS signatures\n");
+        return false;
+    }
+    
+    // Create aggregate signature
+    CBLSAggregateSignature aggSig;
+    if (!BLS::Aggregate(signatures, aggSig)) {
+        LogPrintf("CreateBLSAggregate: Failed to aggregate signatures\n");
+        return false;
+    }
+    
+    vchAggregateSignature = aggSig.vchAggSig;
+    nCertificateType = SIG_TYPE_BLS;
+    nTimeCreated = GetAdjustedTime();
+    
+    LogPrintf("CreateBLSAggregate: Created aggregate with %d signatures\n", signatures.size());
+    return true;
 }
 
 bool CQuorumCertificate::Validate(const uint256& expectedBlockHash) const {
@@ -379,8 +447,47 @@ bool CFluxnodeConsensus::SignBlock(CBlock& block, const CKey& key, const COutPoi
     signature.nTier = nTier;
     
     uint256 blockHash = block.GetHash();
-    if (!signature.Sign(blockHash, key)) {
-        return false;
+    
+    // Check if BLS is active - if so, use BLS signing
+    int nHeight = chainActive.Height() + 1; // Next block height
+    bool fBLSActive = IsBLSActive(nHeight, Params().GetConsensus());
+    
+    if (fBLSActive) {
+        // Get BLS key from cache
+        LOCK(g_fluxnodeCache.cs);
+        auto it = g_fluxnodeCache.mapConfirmedFluxnodeData.find(fluxnodeOutpoint);
+        if (it != g_fluxnodeCache.mapConfirmedFluxnodeData.end() && !it->second.vchBLSPubKey.empty()) {
+            // Initialize BLS key manager if needed
+            if (!blsKeyManager.HasActiveKey()) {
+                if (!blsKeyManager.InitializeFromECDSA(key)) {
+                    LogPrintf("SignBlock: Failed to initialize BLS key\n");
+                    return false;
+                }
+            }
+            
+            // Get BLS secret key
+            CBLSSecretKey blsSecret;
+            CBLSPublicKey blsPublic;
+            if (!blsKeyManager.GetActiveKeys(blsSecret, blsPublic)) {
+                LogPrintf("SignBlock: Failed to get BLS keys\n");
+                return false;
+            }
+            
+            // Sign with BLS
+            if (!signature.SignBLS(blockHash, blsSecret)) {
+                LogPrintf("SignBlock: BLS signing failed\n");
+                return false;
+            }
+            LogPrint("fluxnode", "Block signed with BLS at height %d\n", nHeight);
+        } else {
+            LogPrintf("SignBlock: BLS active but node has no BLS key\n");
+            return false;
+        }
+    } else {
+        // Use ECDSA signing
+        if (!signature.Sign(blockHash, key)) {
+            return false;
+        }
     }
     
     // Serialize signature and store in block
@@ -492,17 +599,44 @@ bool CFluxnodeConsensus::SignValidationAsActiveNode(const uint256& blockHash) {
 
 bool CFluxnodeConsensus::VerifyBlockSignature(const CBlock& block, const CFluxnodeBlockSignature& signature) {
     LOCK2(cs_consensus, g_fluxnodeCache.cs);
-
     
     // Find fluxnode info in FluxnodeCache
     auto it = g_fluxnodeCache.mapConfirmedFluxnodeData.find(signature.fluxnodeOutpoint);
     if (it == g_fluxnodeCache.mapConfirmedFluxnodeData.end()) {
+        LogPrintf("VerifyBlockSignature: Fluxnode %s not found in cache\n", 
+                 signature.fluxnodeOutpoint.ToString());
         return false;
     }
     
-    // Verify signature using public key from cache
     uint256 blockHash = block.GetHash();
-    return signature.Verify(blockHash, it->second.pubKey);
+    
+    // Check if this is a BLS signature
+    if (signature.nSigType == SIG_TYPE_BLS) {
+        // Verify using BLS public key
+        if (it->second.vchBLSPubKey.empty()) {
+            LogPrintf("VerifyBlockSignature: Fluxnode has no BLS public key\n");
+            return false;
+        }
+        
+        CBLSPublicKey blsPubKey;
+        blsPubKey.vchPubKey = it->second.vchBLSPubKey;
+        
+        if (!signature.VerifyBLS(blockHash, blsPubKey)) {
+            LogPrintf("VerifyBlockSignature: BLS signature verification failed\n");
+            return false;
+        }
+        
+        LogPrint("fluxnode", "VerifyBlockSignature: BLS signature verified for block %s\n",
+                 blockHash.ToString());
+        return true;
+    } else {
+        // Verify using ECDSA
+        if (!signature.Verify(blockHash, it->second.pubKey)) {
+            LogPrintf("VerifyBlockSignature: ECDSA signature verification failed\n");
+            return false;
+        }
+        return true;
+    }
 }
 
 bool CFluxnodeConsensus::AddBlockSignature(const uint256& blockHash, const CFluxnodeBlockSignature& signature) {

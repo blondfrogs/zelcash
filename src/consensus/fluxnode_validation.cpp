@@ -8,6 +8,11 @@
 #include "../chainparams.h"
 #include "../timedata.h"
 #include "../util.h"
+#include "../fluxnode/fluxnodecachedb.h"
+#include "bls.h"
+
+// Forward declaration
+bool VerifyBLSQuorumCertificate(const CQuorumCertificate& quorumCert, const uint256& blockHash);
 
 // Check if block header is valid under fluxnode consensus
 bool CheckFluxnodeBlockHeader(
@@ -98,11 +103,22 @@ bool CheckFluxnodeBlock(
                              REJECT_INVALID, "bad-quorum");
         }
         
-        // Verify all signatures in quorum
-        for (const auto& sig : quorumCert.signatures) {
-            if (!fluxnodeConsensus.VerifyBlockSignature(block, sig)) {
-                return state.DoS(50, error("CheckFluxnodeBlock(): invalid signature in quorum"),
-                                 REJECT_INVALID, "bad-quorum-sig");
+        // Check if BLS is active
+        bool fBLSActive = IsBLSActive(nHeight, chainparams.GetConsensus());
+        
+        if (fBLSActive && quorumCert.nCertificateType == SIG_TYPE_BLS) {
+            // Verify BLS aggregate signature
+            if (!VerifyBLSQuorumCertificate(quorumCert, block.GetHash())) {
+                return state.DoS(50, error("CheckFluxnodeBlock(): invalid BLS quorum certificate"),
+                                 REJECT_INVALID, "bad-bls-quorum");
+            }
+        } else {
+            // Verify all individual ECDSA signatures in quorum
+            for (const auto& sig : quorumCert.signatures) {
+                if (!fluxnodeConsensus.VerifyBlockSignature(block, sig)) {
+                    return state.DoS(50, error("CheckFluxnodeBlock(): invalid signature in quorum"),
+                                     REJECT_INVALID, "bad-quorum-sig");
+                }
             }
         }
     }
@@ -168,6 +184,72 @@ bool ContextualCheckFluxnodeBlock(
     }
     
     // Additional contextual checks can be added here
+    
+    return true;
+}
+
+// Verify BLS aggregate signature in quorum certificate
+bool VerifyBLSQuorumCertificate(const CQuorumCertificate& quorumCert, const uint256& blockHash)
+{
+    // Validate that we have a BLS certificate
+    if (quorumCert.nCertificateType != SIG_TYPE_BLS) {
+        LogPrintf("VerifyBLSQuorumCertificate: not a BLS certificate\n");
+        return false;
+    }
+    
+    // Check that we have an aggregate signature
+    if (quorumCert.vchAggregateSignature.empty()) {
+        LogPrintf("VerifyBLSQuorumCertificate: empty aggregate signature\n");
+        return false;
+    }
+    
+    // Check that we have signers
+    if (quorumCert.signerOutpoints.empty()) {
+        LogPrintf("VerifyBLSQuorumCertificate: no signers in certificate\n");
+        return false;
+    }
+    
+    // Collect BLS public keys from the signers
+    std::vector<CBLSPublicKey> publicKeys;
+    publicKeys.reserve(quorumCert.signerOutpoints.size());
+    
+    for (const auto& outpoint : quorumCert.signerOutpoints) {
+        // Get fluxnode from cache
+        if (g_fluxnodeCache.mapConfirmedFluxnodeData.count(outpoint)) {
+            auto fluxnode = g_fluxnodeCache.GetFluxnodeData(outpoint);
+
+            // Check if fluxnode has BLS key
+            if (g_fluxnodeCache.mapConfirmedFluxnodeData.at(outpoint).vchBLSPubKey.size() == BLS_PUBLIC_KEY_SIZE) {
+                CBLSPublicKey blsPubKey;
+                blsPubKey.vchPubKey = g_fluxnodeCache.mapConfirmedFluxnodeData.at(outpoint).vchBLSPubKey;
+                publicKeys.push_back(blsPubKey);
+            } else {
+                LogPrintf("VerifyBLSQuorumCertificate: fluxnode %s has no valid BLS key\n",
+                          outpoint.ToString());
+                return false;
+            }
+        } else {
+            // TODO FLUXNODE - What about blocks that were signed long time ago, and nodes are not online anymore.
+            // we could bypass checks on certs on blocks that are more than 6 hours old then current time?
+            // what if a node goes down within 50 blocks, can we use the snapshot data to get bls sigs? we should be able to right?
+            LogPrintf("VerifyBLSQuorumCertificate: fluxnode %s not found in cache\n",
+                      outpoint.ToString());
+            return false;
+        }
+    }
+    
+    // Deserialize aggregate signature
+    CBLSAggregateSignature aggregateSig;
+    aggregateSig.vchAggSig = quorumCert.vchAggregateSignature;
+    
+    // Verify the aggregate signature
+    if (!BLS::VerifyAggregate(blockHash, publicKeys, aggregateSig)) {
+        LogPrintf("VerifyBLSQuorumCertificate: aggregate signature verification failed\n");
+        return false;
+    }
+    
+    LogPrint("fluxnode", "VerifyBLSQuorumCertificate: successfully verified BLS quorum with %d signers\n",
+             publicKeys.size());
     
     return true;
 }

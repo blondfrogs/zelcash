@@ -13,6 +13,7 @@
 class CBlockIndex;
 class CValidationState;
 class CFluxnodeBlockSignature;
+class CQuorumCertificate;
 
 // Process fluxnode block signatures
 bool ProcessFluxnodeBlockSignature(
@@ -40,5 +41,8 @@ bool ContextualCheckFluxnodeBlock(
     CBlockIndex* pindexPrev);
 
 int CompareFluxnodeChainTips(const CBlockIndex* pindex1, const CBlockIndex* pindex2);
+
+// Verify BLS aggregate signature in quorum certificate
+bool VerifyBLSQuorumCertificate(const CQuorumCertificate& quorumCert, const uint256& blockHash);
 
 #endif // FLUX_FLUXNODE_VALIDATION_H
